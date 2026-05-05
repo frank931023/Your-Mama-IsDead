@@ -1,0 +1,41 @@
+# LoRA fine-tuning config — "person" subject (照片寫實人物)
+# Used by training/pipelines/03_train_lora.py
+# A snapshot of this file is copied next to every produced lora.safetensors
+# (workspace/<tokenId>/lora/config_snapshot.yaml) for reproducibility.
+
+base: sdxl-1.0                  # base model id passed to diffusers / kohya
+rank: 16                        # LoRA rank — 16 is a sensible default for faces
+alpha: 16                       # LoRA alpha (commonly = rank)
+learning_rate: 1.0e-4
+text_encoder_lr: 5.0e-5
+unet_lr: 1.0e-4
+lr_scheduler: cosine_with_restarts
+lr_warmup_steps: 100
+optimizer: adamw8bit
+steps: 2000
+batch_size: 1
+gradient_accumulation: 4
+resolution: 1024
+mixed_precision: bf16
+save_every_n_steps: 500
+seed: 42
+
+# Class-prior preservation (DreamBooth-style) — prevents catastrophic forgetting
+# of the generic "person" concept while teaching the model the deceased's face.
+class_prompt: "a photo of a person"
+instance_prompt_template: "a photo of {token}, person"
+
+# Augmentation
+flip_aug: true
+color_aug: false
+random_crop: false
+
+# Caption handling — uses captions.jsonl produced by 02_caption_images.py
+caption_extension: ".txt"
+caption_dropout_rate: 0.05
+shuffle_caption: true
+keep_tokens: 1                  # always keep the unique-name token at the front
+
+# Output
+output_format: safetensors
+network_module: networks.lora   # kohya nomenclature

@@ -1,0 +1,23 @@
+# Foundry build artifacts
+cache/
+out/
+broadcast/
+
+# Dependencies (managed by forge install)
+lib/
+
+# Local env
+.env
+.env.local
+*.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage
+lcov.info
+coverage/

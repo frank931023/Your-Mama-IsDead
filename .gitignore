@@ -1,0 +1,71 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.js
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.python-version
+
+# build / cache
+.next/
+out/
+dist/
+build/
+*.egg-info/
+.cache/
+.turbo/
+.parcel-cache/
+
+# foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+!.env.example
+
+# training artifacts (large, regenerable)
+training/workspace/
+training/.cache/
+*.safetensors
+*.ckpt
+*.bin
+!**/test/fixtures/**
+
+# data / db
+*.sqlite
+*.db
+postgres-data/
+redis-data/
+qdrant-data/
+minio-data/
+
+# logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,71 @@
+// DSAS backend Prisma schema.
+// Postgres-backed off-chain cache for ERC-721 + ERC-6150 tablets,
+// plus training-job lifecycle and SIWE session storage.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  UPLOADED
+  DONE
+  FAILED
+}
+
+model Tablet {
+  tokenId       BigInt        @id
+  owner         String
+  parentTokenId BigInt?
+  tokenURI      String
+  artifactURI   String?
+  metadataJson  Json?
+  syncedAt      DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  trainingJobs  TrainingJob[]
+
+  @@index([owner])
+  @@index([parentTokenId])
+}
+
+model TrainingJob {
+  id          String    @id @default(cuid())
+  tokenId     BigInt
+  status      JobStatus @default(QUEUED)
+  artifactCid String?
+  artifactURI String?
+  txHash      String?
+  error       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tablet      Tablet    @relation(fields: [tokenId], references: [tokenId])
+
+  @@index([tokenId])
+  @@index([status])
+}
+
+model User {
+  address   String   @id // checksummed wallet address
+  createdAt DateTime @default(now())
+  lastSeen  DateTime @default(now())
+}
+
+model Session {
+  nonce     String   @id
+  address   String
+  issuedAt  DateTime @default(now())
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  @@index([address])
+  @@index([expiresAt])
+}

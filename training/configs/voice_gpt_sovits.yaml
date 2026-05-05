@@ -1,0 +1,45 @@
+# GPT-SoVITS voice cloning config
+# Used by training/pipelines/04_train_voice.py (real-training branch).
+# Reference: https://github.com/RVC-Boss/GPT-SoVITS
+
+backend: gpt-sovits
+base_model: gpt-sovits-v2
+
+# --- Audio preprocessing ---------------------------------------------------
+sample_rate: 32000
+target_format: wav
+mono: true
+trim_silence: true
+silence_top_db: 30              # silence below this is trimmed
+min_clip_seconds: 3
+max_clip_seconds: 10
+denoise: true                   # demucs / rnnoise pre-pass (recommended)
+
+# --- Reference audio -------------------------------------------------------
+# Step 04 will scan workspace/<tokenId>/raw/audios/ and select the longest
+# clean utterance as the prompt. Override here if you have a hand-picked clip.
+reference_clip: null            # e.g. "raw/audios/interview-best.wav"
+prompt_text: null               # if null, will be auto-transcribed by faster-whisper
+prompt_language: zh             # zh | en | ja
+
+# --- Training --------------------------------------------------------------
+sovits_epochs: 8
+sovits_batch_size: 4
+sovits_learning_rate: 4.0e-5
+sovits_save_every_n_epochs: 4
+
+gpt_epochs: 15
+gpt_batch_size: 4
+gpt_learning_rate: 1.0e-4
+gpt_save_every_n_epochs: 5
+
+# --- Inference defaults (written into voice_config.json) -------------------
+inference:
+  top_k: 5
+  top_p: 1.0
+  temperature: 1.0
+  speed: 1.0
+  text_language: zh
+
+# --- Output ----------------------------------------------------------------
+output_format: pth              # GPT-SoVITS native; converted to bin in package step

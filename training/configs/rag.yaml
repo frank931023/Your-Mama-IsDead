@@ -1,0 +1,25 @@
+# RAG index build config
+# Used by training/pipelines/05_build_rag.py
+# This step is FULLY IMPLEMENTED (no stub). The compute service
+# (compute/app/services/rag_engine.py) loads the index produced here at
+# inference time, so the embed model MUST stay in sync between the two.
+
+embed_model: sentence-transformers/multilingual-e5-large
+chunk_size: 512                 # tokens (approximate — char-based splitter)
+chunk_overlap: 64
+normalize_embeddings: true      # cosine similarity at query time
+batch_size: 32
+
+# Sources scanned under workspace/<tokenId>/raw/
+sources:
+  - texts/*.txt                 # diaries, articles, letters
+  - chatlogs/*.json             # unified-schema chatlogs (storage layer §4.4)
+  - chatlogs/*.txt              # raw line/whatsapp dumps (fallback)
+
+# Filtering
+deceased_only: false            # if true, keep only messages where from == deceased
+min_chars_per_chunk: 32         # drop sub-token noise
+
+# Output
+index_path: rag/index.json
+embeddings_path: rag/embeddings.npy

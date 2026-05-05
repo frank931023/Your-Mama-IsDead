@@ -1,0 +1,37 @@
+# DSAS training pipeline — local artefacts must never be committed.
+
+# Working scratch (per-tokenId outputs) — keep the directory itself via .gitkeep.
+workspace/*
+!workspace/.gitkeep
+
+# Model / HF cache
+.cache/
+hf_cache/
+*.cache
+
+# Python virtualenv & build artefacts
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Trained weights — never commit. Fixtures explicitly opt in.
+*.safetensors
+*.bin
+*.ckpt
+*.pt
+*.pth
+!fixtures/**/*.safetensors
+
+# Local env / secrets
+.env
+.env.local
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

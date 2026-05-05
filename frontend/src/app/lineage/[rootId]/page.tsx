@@ -1,0 +1,59 @@
+"use client";
+
+import * as React from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { Loader2, ChevronLeft } from "lucide-react";
+
+import { FamilyTree } from "@/components/FamilyTree";
+import { fetchLineage, type LineageNode } from "@/lib/api";
+
+export default function LineagePage(): React.ReactElement {
+  const params = useParams<{ rootId: string }>();
+  const rootId = params.rootId;
+  const [root, setRoot] = React.useState<LineageNode | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchLineage(rootId)
+      .then((r) => {
+        if (!cancelled) setRoot(r);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "讀取家族樹失敗");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rootId]);
+
+  return (
+    <div className="container-page py-10">
+      <Link
+        href={`/tablet/${rootId}`}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink"
+      >
+        <ChevronLeft className="h-4 w-4" aria-hidden />
+        回到塔位
+      </Link>
+      <h1 className="mb-1 font-serif text-2xl text-ink">家族樹 · 起自 #{rootId}</h1>
+      <p className="mb-6 text-sm text-ink-muted">點選任一節點以前往該塔位。</p>
+
+      {loading ? (
+        <div className="flex h-[60vh] items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-ink-muted" aria-hidden />
+        </div>
+      ) : error || !root ? (
+        <p className="text-sm text-red-700">{error ?? "找不到資料"}</p>
+      ) : (
+        <FamilyTree root={root} />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,15 @@
+# DSAS off-line training pipeline — runtime dependencies
+# Heavy ML libs (torch, diffusers, transformers, peft) are intentionally NOT pinned here:
+# they are lazy-imported only by the real-training code paths. Install them on a GPU
+# host with the appropriate CUDA wheel. See README.md.
+
+requests==2.32.3
+web3==6.20.3
+eth-account==0.13.4
+python-dotenv==1.0.1
+PyYAML==6.0.2
+Pillow==10.4.0
+sentence-transformers==3.0.1
+numpy==1.26.4
+tqdm==4.66.5
+safetensors==0.4.5

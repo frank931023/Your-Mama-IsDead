@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-ink: 26 24 20;
+    --color-ink-soft: 44 41 37;
+    --color-paper: 246 241 231;
+    --color-paper-soft: 236 229 211;
+    --color-gold: 176 138 62;
+    --color-gold-soft: 212 178 101;
+    --color-gold-dark: 126 96 39;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-paper text-ink antialiased;
+    font-family: var(--font-sans, "Noto Sans TC", "Inter", system-ui, sans-serif);
+    background-image:
+      radial-gradient(circle at 0% 0%, rgba(176, 138, 62, 0.06) 0, transparent 40%),
+      radial-gradient(circle at 100% 100%, rgba(26, 24, 20, 0.04) 0, transparent 40%);
+  }
+
+  ::selection {
+    background-color: rgba(176, 138, 62, 0.35);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: "Noto Serif TC", "Source Han Serif TC", ui-serif, Georgia, serif;
+    font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+}
