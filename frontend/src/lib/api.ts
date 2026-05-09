@@ -123,6 +123,22 @@ export async function scanRegistry(): Promise<{ found: number; tablets: TabletRe
   return handle<{ found: number; tablets: TabletRecord[] }>(res);
 }
 
+export interface CloudStatus {
+  chat: boolean;
+  voice: boolean;
+  image: boolean;
+  video: boolean;
+  chatProvider: "anthropic" | "openai" | null;
+  voiceProvider: "elevenlabs" | "openai" | null;
+  imageProvider: "fal" | "openai" | null;
+  videoProvider: "fal" | null;
+}
+
+export async function getCloudStatus(): Promise<CloudStatus> {
+  const res = await fetch(`${BACKEND_URL}/api/personas/cloud-status`, { cache: "no-store" });
+  return handle<CloudStatus>(res);
+}
+
 export async function uploadRelay(
   file: File,
   onProgress?: (pct: number) => void,

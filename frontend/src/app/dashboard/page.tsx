@@ -8,8 +8,9 @@ import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ChainGuard } from "@/components/ChainGuard";
+import { useError } from "@/components/ErrorDialog";
 import { getOwned, type TabletRecord } from "@/lib/api";
-import { formatDate, ipfsToHttps, truncateAddress } from "@/lib/utils";
+import { displayName, formatDate, ipfsToHttps, shortName, truncateAddress } from "@/lib/utils";
 
 export default function DashboardPage(): React.ReactElement {
   return (
@@ -35,21 +36,21 @@ export default function DashboardPage(): React.ReactElement {
 
 function DashboardList(): React.ReactElement {
   const { address } = useAccount();
+  const { showError } = useError();
   const [items, setItems] = React.useState<TabletRecord[] | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
     if (!address) return;
     let cancelled = false;
     setLoading(true);
-    setError(null);
     getOwned(address)
       .then((rs) => {
         if (!cancelled) setItems(rs);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "讀取失敗");
+        if (cancelled) return;
+        showError("讀取我的塔位失敗", e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -57,7 +58,7 @@ function DashboardList(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [address]);
+  }, [address, showError]);
 
   if (!address) {
     return <p className="text-sm text-ink-muted">請先連接錢包。</p>;
@@ -68,9 +69,6 @@ function DashboardList(): React.ReactElement {
         <Loader2 className="h-6 w-6 animate-spin text-ink-muted" aria-hidden />
       </div>
     );
-  }
-  if (error) {
-    return <p className="text-sm text-red-700">{error}</p>;
   }
   if (!items || items.length === 0) {
     return (
@@ -110,7 +108,7 @@ function TabletCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
           {portrait ? (
             <img
               src={portrait}
-              alt={meta?.name ?? `tablet #${tablet.tokenId}`}
+              alt={shortName(meta, tablet.tokenId)}
               className="h-40 w-full rounded-md object-cover"
             />
           ) : (
@@ -119,8 +117,8 @@ function TabletCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
             </div>
           )}
           <div>
-            <CardTitle>{meta?.name ?? `Tablet #${tablet.tokenId}`}</CardTitle>
-            <p className="text-xs text-ink-muted">#{tablet.tokenId}</p>
+            <CardTitle>{displayName(meta, tablet.tokenId)}</CardTitle>
+            <p className="text-xs text-ink-muted">第 {tablet.tokenId} 號塔位</p>
           </div>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-2">
@@ -128,7 +126,7 @@ function TabletCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
             {formatDate(birth) || "?"} – {formatDate(death) || "?"}
           </p>
           <p className="text-xs text-ink-muted">
-            擁有者:{truncateAddress(tablet.owner)}
+            家人:{truncateAddress(tablet.owner)}
           </p>
           <span className={`mt-auto inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[status]}`}>
             {STATUS_LABEL[status]}

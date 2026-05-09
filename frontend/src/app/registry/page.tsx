@@ -2,45 +2,65 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw, LayoutGrid, List } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
+import { useError } from "@/components/ErrorDialog";
 import { getRegistry, scanRegistry, type TabletRecord } from "@/lib/api";
-import { formatDate, ipfsToHttps, truncateAddress } from "@/lib/utils";
+import { displayName, formatDate, ipfsToHttps, shortName, truncateAddress } from "@/lib/utils";
 
 const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "11155111");
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "";
 
+type ViewMode = "bento" | "table";
+
 export default function RegistryPage(): React.ReactElement {
+  const { showError } = useError();
   const [items, setItems] = React.useState<TabletRecord[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [scanning, setScanning] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
   const [lastScan, setLastScan] = React.useState<string | null>(null);
+  const [view, setView] = React.useState<ViewMode>("bento");
+
+  // Persist user preference
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("dsas:registry-view");
+      if (saved === "bento" || saved === "table") setView(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem("dsas:registry-view", view);
+    } catch {
+      /* ignore */
+    }
+  }, [view]);
 
   const refresh = React.useCallback(async (): Promise<void> => {
     setLoading(true);
-    setError(null);
     try {
       const rs = await getRegistry();
       setItems(rs);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "讀取失敗");
+      showError("讀取塔位列表失敗", e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   const scan = async (): Promise<void> => {
     setScanning(true);
-    setError(null);
     try {
       const result = await scanRegistry();
       setItems(result.tablets);
       setLastScan(`掃描完成,鏈上找到 ${result.found} 筆。`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "掃描失敗");
+      showError("掃描鏈上失敗", e instanceof Error ? e.message : String(e));
     } finally {
       setScanning(false);
     }
@@ -56,11 +76,11 @@ export default function RegistryPage(): React.ReactElement {
         <div>
           <h1 className="font-serif text-3xl text-ink">塔位總覽</h1>
           <p className="text-sm text-ink-muted">
-            列出所有已鑄造的 DSAS 塔位 NFT,以及對應的 IPFS 內容識別碼。
+            這座記憶燈塔已點亮的所有名字。每一張塔位都對應一段被永久封存的故事。
           </p>
           {CONTRACT_ADDRESS && CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000" ? (
             <p className="mt-1 text-xs text-ink-muted">
-              合約:
+              合約地址:
               <a
                 href={etherscanAddressUrl(CONTRACT_ADDRESS)}
                 target="_blank"
@@ -73,7 +93,8 @@ export default function RegistryPage(): React.ReactElement {
             </p>
           ) : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle view={view} onChange={setView} />
           <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden />
             重新整理
@@ -92,9 +113,6 @@ export default function RegistryPage(): React.ReactElement {
       {lastScan ? (
         <p className="mb-4 text-xs text-emerald-800">{lastScan}</p>
       ) : null}
-      {error ? (
-        <p className="mb-4 text-sm text-red-700">{error}</p>
-      ) : null}
 
       {loading && !items ? (
         <div className="flex items-center justify-center py-20">
@@ -103,10 +121,12 @@ export default function RegistryPage(): React.ReactElement {
       ) : !items || items.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-ink-muted">
-            <p>目前 DB 沒有任何塔位紀錄。</p>
+            <p>目前還沒有任何塔位被點亮。</p>
             <p>剛鑄造完?點上方「掃描鏈上新鑄造」把鏈上資料拉進來。</p>
           </CardContent>
         </Card>
+      ) : view === "bento" ? (
+        <BentoGrid items={items} />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-ink/10 bg-paper">
           <table className="min-w-full divide-y divide-ink/10 text-sm">
@@ -134,9 +154,146 @@ export default function RegistryPage(): React.ReactElement {
   );
 }
 
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: ViewMode;
+  onChange: (v: ViewMode) => void;
+}): React.ReactElement {
+  return (
+    <div className="inline-flex rounded-md border border-ink/15 bg-paper p-0.5 text-xs">
+      <button
+        type="button"
+        onClick={() => onChange("bento")}
+        className={[
+          "flex items-center gap-1 rounded px-2.5 py-1.5 transition-colors",
+          view === "bento" ? "bg-ink text-paper" : "text-ink-muted hover:text-ink",
+        ].join(" ")}
+        aria-pressed={view === "bento"}
+      >
+        <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+        卡片
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("table")}
+        className={[
+          "flex items-center gap-1 rounded px-2.5 py-1.5 transition-colors",
+          view === "table" ? "bg-ink text-paper" : "text-ink-muted hover:text-ink",
+        ].join(" ")}
+        aria-pressed={view === "table"}
+      >
+        <List className="h-3.5 w-3.5" aria-hidden />
+        清單
+      </button>
+    </div>
+  );
+}
+
+function BentoGrid({ items }: { items: TabletRecord[] }): React.ReactElement {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {items.map((t) => (
+        <BentoCard key={t.tokenId} tablet={t} />
+      ))}
+    </div>
+  );
+}
+
+function BentoCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
+  const meta = tablet.metadata;
+  const name = displayName(meta, tablet.tokenId);
+  const subtitle = shortName(meta, tablet.tokenId);
+  const birth = meta?.dsas.deceased.birth?.date;
+  const death = meta?.dsas.deceased.death?.date;
+  const portraitURI = meta?.image ?? undefined;
+  const epitaph = meta?.dsas.deceased.epitaph;
+
+  // We can't wrap the whole card in <Link> because the owner-address /
+  // CID badges are themselves <a> tags; nested anchors are invalid HTML and
+  // cause a Next.js hydration error. Instead the portrait + name area links
+  // to the detail page; badges link to their respective external targets.
+  return (
+    <article className="group flex flex-col overflow-hidden rounded-lg border border-ink/10 bg-paper transition-shadow hover:shadow-ritual hover:border-gold/50">
+      <Link href={`/tablet/${tablet.tokenId}`} className="block">
+        <div className="relative h-44 w-full overflow-hidden bg-paper-soft">
+          {portraitURI ? (
+            <img
+              src={ipfsToHttps(portraitURI)}
+              alt={subtitle}
+              className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-ink-muted">
+              尚無肖像
+            </div>
+          )}
+          <span className="absolute right-2 top-2 rounded-full bg-ink/70 px-2 py-0.5 font-mono text-xs text-paper">
+            #{tablet.tokenId}
+          </span>
+        </div>
+      </Link>
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <Link href={`/tablet/${tablet.tokenId}`} className="block">
+          <h3 className="font-serif text-lg leading-snug text-ink hover:text-gold-dark">
+            {name}
+          </h3>
+          <p className="text-xs text-ink-muted">
+            {formatDate(birth) || "?"} – {formatDate(death) || "?"}
+          </p>
+        </Link>
+        {epitaph ? (
+          <p className="line-clamp-2 rounded-md bg-paper-soft/60 px-2 py-1.5 font-serif text-xs italic text-ink">
+            「{epitaph}」
+          </p>
+        ) : null}
+        <div className="mt-auto flex flex-col gap-1 border-t border-ink/5 pt-2 text-[10px] text-ink-muted">
+          <div className="flex items-center gap-1">
+            <span className="text-ink">家人:</span>
+            <a
+              href={etherscanAddressUrl(tablet.owner)}
+              target="_blank"
+              rel="noreferrer"
+              className="font-mono underline-offset-2 hover:underline"
+            >
+              {truncateAddress(tablet.owner)}
+            </a>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <CIDBadge label="記事" uri={tablet.tokenURI} />
+            <CIDBadge label="肖像" uri={portraitURI} />
+            <CIDBadge label="記憶模型" uri={tablet.artifactURI ?? undefined} />
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CIDBadge({ label, uri }: { label: string; uri: string | undefined }): React.ReactElement {
+  if (!uri) {
+    return (
+      <span className="rounded bg-ink/5 px-1.5 py-0.5 text-ink-muted">{label} —</span>
+    );
+  }
+  const cid = extractCID(uri);
+  return (
+    <a
+      href={ipfsToHttps(uri)}
+      target="_blank"
+      rel="noreferrer"
+      title={uri}
+      className="rounded bg-gold/10 px-1.5 py-0.5 font-mono text-gold-dark hover:bg-gold/20"
+    >
+      {label} {cid ? truncateCID(cid) : "✓"}
+    </a>
+  );
+}
+
 function RegistryRow({ tablet }: { tablet: TabletRecord }): React.ReactElement {
   const meta = tablet.metadata;
-  const name = meta?.name ?? `Tablet #${tablet.tokenId}`;
+  const name = displayName(meta, tablet.tokenId);
   const birth = meta?.dsas.deceased.birth?.date;
   const death = meta?.dsas.deceased.death?.date;
   const portraitURI = meta?.image ?? undefined;

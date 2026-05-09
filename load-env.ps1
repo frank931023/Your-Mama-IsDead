@@ -6,6 +6,14 @@ param(
     [string] $Path = ""
 )
 
+# Ensure the terminal renders UTF-8 properly (otherwise CJK in logs becomes
+# `擳?蟡?` mojibake on default Big5/CP950 Windows installs).
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new()
+    chcp 65001 *> $null
+} catch { }
+
 if (-not $Path) {
     # Resolve script directory robustly across dot-sourcing styles.
     $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } `

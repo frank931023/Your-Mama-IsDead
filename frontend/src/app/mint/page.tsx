@@ -15,6 +15,7 @@ import { ChainGuard } from "@/components/ChainGuard";
 import { ConsentForm } from "@/components/ConsentForm";
 import { MediaUploader } from "@/components/MediaUploader";
 import { ChatLogImporter } from "@/components/ChatLogImporter";
+import { useError } from "@/components/ErrorDialog";
 import { useMintTablet } from "@/lib/wallet";
 import { uploadRelay, type UploadedAsset } from "@/lib/api";
 import { buildTabletMetadata } from "@/lib/metadata-builder";
@@ -116,6 +117,7 @@ function MintFlow(): React.ReactElement {
   const router = useRouter();
   const { address } = useAccount();
   const { mintRoot, mintWithParent, isPending } = useMintTablet();
+  const { showError } = useError();
 
   const [step, setStep] = React.useState(0);
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
@@ -151,6 +153,12 @@ function MintFlow(): React.ReactElement {
     }
   }, [draft]);
 
+  // Scroll to top whenever the user advances / retreats a step.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
+
   const updateBasic = (patch: Partial<DraftBasic>): void =>
     setDraft((d) => ({ ...d, basic: { ...d.basic, ...patch } }));
   const updateMedia = (patch: Partial<DraftMedia>): void =>
@@ -169,6 +177,7 @@ function MintFlow(): React.ReactElement {
 
   const submit = async (): Promise<void> => {
     if (!address) {
+      showError("請先連接錢包", "鑄造前需要先連接您的錢包以簽署交易。");
       setSubmitState({ status: "error", message: "請先連接錢包" });
       return;
     }
@@ -243,6 +252,7 @@ function MintFlow(): React.ReactElement {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "鑄造失敗";
+      showError("鑄造失敗", msg);
       setSubmitState({ status: "error", message: msg });
     }
   };
@@ -670,7 +680,7 @@ function SubmitStep({
 
         {state.status === "error" ? (
           <div className="flex flex-col gap-2">
-            <p className="text-sm text-red-700">錯誤:{state.message}</p>
+            <p className="text-sm text-ink-muted">鑄造未完成,請查看跳出的訊息後再試一次。</p>
             <Button onClick={onSubmit} loading={isPending}>
               重試
             </Button>

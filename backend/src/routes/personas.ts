@@ -1,8 +1,19 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import axios, { AxiosError, type AxiosResponse } from "axios";
+import type { TabletMetadata } from "../../../shared/types/tablet.js";
 import { env } from "../lib/env.js";
+import { prisma } from "../db.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
+import {
+  buildPersonaSystemPrompt,
+  cloudProviderStatus,
+  generateImageDataUrl,
+  generateVideoUrl,
+  streamPersonaChat,
+  synthesizeVoice,
+  type ChatTurn,
+} from "../cloud-persona.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u),
@@ -106,4 +117,248 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     if (!base) return;
     await proxy(request, reply, `${base}/persona/${params.data.tokenId}/manifest`, "GET", false);
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Cloud-mode endpoints — bypass the offline training pipeline + on-chain
+  // artifactURI requirement. Powered directly by OpenAI (and optionally
+  // ElevenLabs). Used when the user picks "雲端 API 即時啟用" in the
+  // persona activation modal.
+  // ────────────────────────────────────────────────────────────────────────
+
+  // GET /api/personas/cloud-status — public; tells the frontend whether to
+  // enable the cloud activation card in the modal.
+  app.get("/cloud-status", async () => cloudProviderStatus());
+
+  // POST /api/personas/:tokenId/cloud-chat — auth + owner; SSE token stream.
+  app.post(
+    "/:tokenId/cloud-chat",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+
+      const body = z
+        .object({
+          message: z.string().min(1).max(4000),
+          history: z
+            .array(
+              z.object({
+                role: z.enum(["system", "user", "assistant"]),
+                content: z.string(),
+              }),
+            )
+            .default([]),
+        })
+        .safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "invalid_body", issues: body.error.issues });
+      }
+
+      const tokenId = BigInt(params.data.tokenId);
+      const tablet = await prisma.tablet.findUnique({ where: { tokenId } });
+      if (!tablet) return reply.code(404).send({ error: "tablet_not_synced" });
+
+      const metadata = tablet.metadataJson as TabletMetadata | null;
+      if (!metadata) {
+        return reply.code(409).send({
+          error: "metadata_unavailable",
+          hint: "tablet metadata has not been resolved from IPFS yet; trigger /sync first",
+        });
+      }
+
+      const messages: ChatTurn[] = [
+        { role: "system", content: buildPersonaSystemPrompt(metadata) },
+        ...body.data.history,
+        { role: "user", content: body.data.message },
+      ];
+
+      // We're writing the response headers via reply.raw.writeHead, which
+      // bypasses Fastify's @fastify/cors plugin (it only sets headers on the
+      // `reply` object). Mirror the plugin behaviour manually here so the
+      // browser doesn't block the SSE response on cross-origin chat requests.
+      const origin = request.headers.origin;
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+        ...(typeof origin === "string"
+          ? {
+              "Access-Control-Allow-Origin": origin,
+              "Access-Control-Allow-Credentials": "true",
+              Vary: "Origin",
+            }
+          : {}),
+      });
+
+      const ctrl = new AbortController();
+      request.raw.on("close", () => ctrl.abort());
+
+      try {
+        for await (const delta of streamPersonaChat(messages, ctrl.signal)) {
+          // SSE frame format: `event: token\ndata: <text>\n\n` — matches
+          // the parser in frontend/src/lib/chat-stream.ts (`parsed.type`
+          // is read from the SSE event field).
+          reply.raw.write(`event: token\ndata: ${escapeSseData(delta)}\n\n`);
+        }
+        reply.raw.write(`event: done\ndata: {}\n\n`);
+      } catch (err) {
+        request.log.error({ err }, "cloud-chat stream failed");
+        const msg = describeUpstreamError(err);
+        reply.raw.write(`event: error\ndata: ${escapeSseData(msg)}\n\n`);
+      } finally {
+        reply.raw.end();
+      }
+    },
+  );
+
+  // POST /api/personas/:tokenId/cloud-voice — auth + owner; returns mp3.
+  app.post(
+    "/:tokenId/cloud-voice",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const body = z.object({ text: z.string().min(1).max(2000) }).safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "invalid_body" });
+
+      try {
+        const { audio, contentType } = await synthesizeVoice(body.data.text);
+        reply.header("content-type", contentType);
+        return reply.send(audio);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "voice_provider_failed";
+        request.log.error({ err }, "cloud-voice failed");
+        return reply.code(502).send({ error: "voice_provider_failed", detail });
+      }
+    },
+  );
+
+  // POST /api/personas/:tokenId/cloud-portrait — auth + owner; returns base64 PNG.
+  app.post(
+    "/:tokenId/cloud-portrait",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+
+      const body = z
+        .object({ prompt: z.string().min(1).max(1000) })
+        .safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "invalid_body" });
+
+      const tokenId = BigInt(params.data.tokenId);
+      const tablet = await prisma.tablet.findUnique({ where: { tokenId } });
+      const metadata = (tablet?.metadataJson as TabletMetadata | null) ?? null;
+      const name = metadata?.dsas?.deceased?.name ?? metadata?.name ?? `Tablet #${tokenId}`;
+
+      const fullPrompt = `Memorial portrait of ${name}, dignified, soft natural light, photographic quality, gentle expression. Scene: ${body.data.prompt}`;
+
+      try {
+        const url = await generateImageDataUrl(fullPrompt);
+        return reply.send({ url });
+      } catch (err) {
+        const detail = describeUpstreamError(err);
+        request.log.error({ err }, "cloud-portrait failed");
+        return reply.code(502).send({ error: "image_provider_failed", detail });
+      }
+    },
+  );
+
+  // POST /api/personas/:tokenId/cloud-video — short video generation via fal.ai.
+  // Returns { url } pointing to the rendered MP4. Render takes 30–90s.
+  app.post(
+    "/:tokenId/cloud-video",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+
+      const body = z
+        .object({ prompt: z.string().min(1).max(1000) })
+        .safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "invalid_body" });
+
+      const tokenId = BigInt(params.data.tokenId);
+      const tablet = await prisma.tablet.findUnique({ where: { tokenId } });
+      const metadata = (tablet?.metadataJson as TabletMetadata | null) ?? null;
+      const name = metadata?.dsas?.deceased?.name ?? metadata?.name ?? `Tablet #${tokenId}`;
+
+      const fullPrompt = `Cinematic memorial video for ${name}. ${body.data.prompt}. Soft natural lighting, gentle camera movement, photo-realistic, dignified atmosphere.`;
+
+      try {
+        const url = await generateVideoUrl(fullPrompt);
+        return reply.send({ url });
+      } catch (err) {
+        const detail = describeUpstreamError(err);
+        request.log.error({ err }, "cloud-video failed");
+        return reply.code(502).send({ error: "video_provider_failed", detail });
+      }
+    },
+  );
 };
+
+function escapeSseData(s: string): string {
+  // SSE data lines split on \n. Replace embedded newlines/CR with explicit
+  // markers so a single delta doesn't split into two frames.
+  return s.replace(/\r/g, "").replace(/\n/g, "\\n");
+}
+
+/**
+ * Convert an upstream provider error into a short, user-readable detail.
+ * Surfaces billing / quota issues in plain language regardless of whether the
+ * error came from axios (image/voice) or fetch (chat streams).
+ */
+function describeUpstreamError(err: unknown): string {
+  // axios path (image / voice / video): structured error.response.data.
+  if (err instanceof AxiosError) {
+    const status = err.response?.status;
+    const data = err.response?.data as
+      | {
+          error?: { code?: string; message?: string; type?: string };
+          detail?: string | unknown;
+        }
+      | undefined;
+
+    // OpenAI shape: { error: { code, message, type } }
+    const code = data?.error?.code;
+    const msg = data?.error?.message;
+    if (code === "billing_hard_limit_reached") {
+      return "OpenAI 帳戶已達設定的每月用量上限,請於 platform.openai.com 後台調高 monthly cap。";
+    }
+    if (code === "insufficient_quota" || data?.error?.type === "insufficient_quota") {
+      return "OpenAI 帳戶餘額不足,請至 platform.openai.com 充值,或設定 ANTHROPIC_API_KEY 改用 Claude。";
+    }
+    if (msg) return msg.slice(0, 240);
+
+    // fal.ai shape: { detail: "User is locked. Reason: Exhausted balance. ..." }
+    if (typeof data?.detail === "string") {
+      if (data.detail.includes("Exhausted balance") || data.detail.includes("locked")) {
+        return "fal.ai 帳戶餘額不足或被鎖定,請至 fal.ai/dashboard/billing 充值。";
+      }
+      if (data.detail.includes("Authentication")) {
+        return "fal.ai API key 無效,請至 fal.ai/dashboard/keys 重新建立並更新 .env 的 FAL_API_KEY。";
+      }
+      return data.detail.slice(0, 240);
+    }
+    // ElevenLabs shape: { detail: { status: ..., message: ... } } sometimes.
+    if (data?.detail && typeof data.detail === "object") {
+      const d = data.detail as { message?: string; status?: string };
+      if (d.message) return d.message.slice(0, 240);
+    }
+
+    return `Upstream ${status ?? "?"}`;
+  }
+  // fetch path (chat stream): error message embeds the raw upstream body.
+  if (err instanceof Error) {
+    if (err.message.includes("billing_hard_limit_reached")) {
+      return "OpenAI 帳戶已達設定的每月用量上限,請於 platform.openai.com 後台調高 monthly cap,或設定 ANTHROPIC_API_KEY 改用 Claude。";
+    }
+    if (err.message.includes("insufficient_quota")) {
+      return "OpenAI 帳戶餘額不足,請至 platform.openai.com 充值,或設定 ANTHROPIC_API_KEY 改用 Claude。";
+    }
+    if (err.message.includes("invalid_api_key") || err.message.includes("Incorrect API key")) {
+      return "API key 無效,請檢查 .env 設定。";
+    }
+    return err.message.slice(0, 240);
+  }
+  return "unknown error";
+}

@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { MediaUploader } from "@/components/MediaUploader";
 import { Button } from "@/components/ui/Button";
+import { useError } from "@/components/ErrorDialog";
 import { uploadRelay, type UploadedAsset } from "@/lib/api";
 import type { ChatLogEntry } from "@shared/types/tablet";
 
@@ -23,10 +24,10 @@ interface ChatLogImporterProps {
 }
 
 export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): React.ReactElement {
+  const { showError } = useError();
   const [platform, setPlatform] = React.useState<ChatLogEntry["platform"]>("line");
   const [format, setFormat] = React.useState<ChatLogEntry["format"]>("txt");
   const [uploading, setUploading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
@@ -36,13 +37,12 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
 
   const handleFile = async (file: File): Promise<void> => {
     setUploading(true);
-    setError(null);
     try {
       const asset: UploadedAsset = await uploadRelay(file);
       const entry: ChatLogEntry = { platform, uri: asset.uri, format };
       onChange([...value, entry]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "上傳失敗");
+      showError("對話紀錄上傳失敗", e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }
@@ -116,8 +116,6 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
         </div>
       </div>
 
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
-
       {value.length > 0 ? (
         <ul className="flex flex-col gap-1.5">
           {value.map((entry, idx) => (
@@ -134,7 +132,7 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
               </div>
               <button
                 type="button"
-                className="text-red-700 hover:underline"
+                className="text-ink-muted hover:text-ink hover:underline"
                 onClick={() => remove(idx)}
               >
                 移除

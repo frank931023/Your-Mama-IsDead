@@ -4,6 +4,7 @@ import * as React from "react";
 import { Loader2, Upload, X, FileText, Image as ImageIcon, Music, Film } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
+import { useError } from "@/components/ErrorDialog";
 import { uploadRelay, type UploadedAsset } from "@/lib/api";
 import { cn, ipfsToHttps } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ export function MediaUploader({
   value,
   onChange,
 }: MediaUploaderProps): React.ReactElement {
+  const { showError } = useError();
   const [pending, setPending] = React.useState<PendingUpload[]>([]);
   const [dragOver, setDragOver] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -63,16 +65,25 @@ export function MediaUploader({
       );
 
       const successes: UploadedAsset[] = [];
+      const failures: { name: string; reason: string }[] = [];
       results.forEach((r, i) => {
         const id = incoming[i]!.id;
+        const fileName = incoming[i]!.name;
         if (r.status === "fulfilled") {
           successes.push(r.value);
           setPending((prev) => prev.filter((p) => p.id !== id));
         } else {
           const msg = r.reason instanceof Error ? r.reason.message : "Upload failed";
-          setPending((prev) => prev.map((p) => (p.id === id ? { ...p, error: msg } : p)));
+          failures.push({ name: fileName, reason: msg });
+          // drop the row entirely; the modal carries the failure information
+          setPending((prev) => prev.filter((p) => p.id !== id));
         }
       });
+
+      if (failures.length > 0) {
+        const detail = failures.map((f) => `• ${f.name}\n  ${f.reason}`).join("\n\n");
+        showError(failures.length === 1 ? "檔案上傳失敗" : `${failures.length} 個檔案上傳失敗`, detail);
+      }
 
       if (successes.length > 0) {
         if (single) {
@@ -82,7 +93,7 @@ export function MediaUploader({
         }
       }
     },
-    [onChange, single, value],
+    [onChange, showError, single, value],
   );
 
   const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
@@ -92,7 +103,6 @@ export function MediaUploader({
   };
 
   const remove = (uri: string): void => onChange(value.filter((a) => a.uri !== uri));
-  const clearError = (id: string): void => setPending((prev) => prev.filter((p) => p.id !== id));
 
   return (
     <div className="flex flex-col gap-3">
@@ -153,24 +163,10 @@ export function MediaUploader({
               className="flex items-center justify-between gap-2 rounded-md border border-ink/10 bg-paper px-3 py-2 text-xs"
             >
               <span className="flex items-center gap-2 truncate">
-                {p.error ? (
-                  <X className="h-3 w-3 text-red-700" aria-hidden />
-                ) : (
-                  <Loader2 className="h-3 w-3 animate-spin text-ink-muted" aria-hidden />
-                )}
+                <Loader2 className="h-3 w-3 animate-spin text-ink-muted" aria-hidden />
                 <span className="truncate">{p.name}</span>
               </span>
-              {p.error ? (
-                <button
-                  type="button"
-                  onClick={() => clearError(p.id)}
-                  className="text-red-700 underline"
-                >
-                  {p.error}
-                </button>
-              ) : (
-                <span className="text-ink-muted tabular-nums">{p.pct}%</span>
-              )}
+              <span className="text-ink-muted tabular-nums">{p.pct}%</span>
             </li>
           ))}
         </ul>

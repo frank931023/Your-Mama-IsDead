@@ -7,6 +7,7 @@ import { RainbowKitProvider, darkTheme, lightTheme } from "@rainbow-me/rainbowki
 
 import "@rainbow-me/rainbowkit/styles.css";
 import { wagmiConfig } from "@/lib/wagmi";
+import { ErrorDialogProvider } from "@/components/ErrorDialog";
 
 export function Providers({ children }: { children: React.ReactNode }): React.ReactElement {
   const [queryClient] = React.useState(
@@ -42,7 +43,7 @@ export function Providers({ children }: { children: React.ReactNode }): React.Re
           }}
           modalSize="compact"
         >
-          {children}
+          <ErrorDialogProvider>{children}</ErrorDialogProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

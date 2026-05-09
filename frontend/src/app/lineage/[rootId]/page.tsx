@@ -6,13 +6,14 @@ import Link from "next/link";
 import { Loader2, ChevronLeft } from "lucide-react";
 
 import { FamilyTree } from "@/components/FamilyTree";
+import { useError } from "@/components/ErrorDialog";
 import { fetchLineage, type LineageNode } from "@/lib/api";
 
 export default function LineagePage(): React.ReactElement {
   const params = useParams<{ rootId: string }>();
   const rootId = params.rootId;
+  const { showError } = useError();
   const [root, setRoot] = React.useState<LineageNode | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -23,7 +24,8 @@ export default function LineagePage(): React.ReactElement {
         if (!cancelled) setRoot(r);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "讀取家族樹失敗");
+        if (cancelled) return;
+        showError("讀取家族樹失敗", e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -31,7 +33,7 @@ export default function LineagePage(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [rootId]);
+  }, [rootId, showError]);
 
   return (
     <div className="container-page py-10">
@@ -49,8 +51,8 @@ export default function LineagePage(): React.ReactElement {
         <div className="flex h-[60vh] items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-ink-muted" aria-hidden />
         </div>
-      ) : error || !root ? (
-        <p className="text-sm text-red-700">{error ?? "找不到資料"}</p>
+      ) : !root ? (
+        <p className="text-sm text-ink-muted">無法載入家族樹資料,請稍後再試。</p>
       ) : (
         <FamilyTree root={root} />
       )}

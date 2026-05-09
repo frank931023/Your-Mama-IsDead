@@ -8,15 +8,18 @@ import { Loader2, Play, Volume2, MessagesSquare, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
+import { PersonaActivationModal } from "@/components/PersonaActivationModal";
 import { fetchTablet, type TabletRecord } from "@/lib/api";
-import { formatDate, ipfsToHttps, truncateAddress } from "@/lib/utils";
+import { displayName, formatDate, ipfsToHttps, shortName, truncateAddress } from "@/lib/utils";
+import { useError } from "@/components/ErrorDialog";
 
 export default function TabletDetailPage(): React.ReactElement {
   const params = useParams<{ tokenId: string }>();
   const tokenId = params.tokenId;
+  const { showError } = useError();
   const [record, setRecord] = React.useState<TabletRecord | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [activationOpen, setActivationOpen] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -26,7 +29,8 @@ export default function TabletDetailPage(): React.ReactElement {
         if (!cancelled) setRecord(r);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "讀取失敗");
+        if (cancelled) return;
+        showError("找不到該塔位", e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -34,7 +38,7 @@ export default function TabletDetailPage(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [tokenId]);
+  }, [tokenId, showError]);
 
   if (loading) {
     return (
@@ -44,10 +48,10 @@ export default function TabletDetailPage(): React.ReactElement {
     );
   }
 
-  if (error || !record) {
+  if (!record) {
     return (
-      <div className="container-page py-20 text-center">
-        <p className="text-sm text-red-700">{error ?? "找不到該塔位"}</p>
+      <div className="container-page py-20 text-center text-sm text-ink-muted">
+        無法載入這座塔位的資料,請稍後再試。
       </div>
     );
   }
@@ -66,7 +70,7 @@ export default function TabletDetailPage(): React.ReactElement {
             {portrait ? (
               <img
                 src={portrait}
-                alt={meta?.name ?? `tablet #${tokenId}`}
+                alt={shortName(meta, tokenId)}
                 className="h-48 w-48 rounded-md object-cover shadow-ritual"
               />
             ) : (
@@ -78,9 +82,9 @@ export default function TabletDetailPage(): React.ReactElement {
           <div className="flex flex-col gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-gold-dark">
-                數位塔位 · #{tokenId}
+                數位塔位 · 第 {tokenId} 號
               </p>
-              <h1 className="font-serif text-3xl text-ink">{meta?.name ?? `Tablet #${tokenId}`}</h1>
+              <h1 className="font-serif text-3xl text-ink">{displayName(meta, tokenId)}</h1>
             </div>
             <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
               <FactRow label="籍貫" value={deceased?.origin} />
@@ -90,7 +94,7 @@ export default function TabletDetailPage(): React.ReactElement {
               />
               <FactRow label="出生地" value={deceased?.birth?.place} />
               <FactRow label="逝世地" value={deceased?.death?.place} />
-              <FactRow label="持有錢包" value={truncateAddress(record.owner)} />
+              <FactRow label="家人" value={truncateAddress(record.owner)} />
               {record.parentTokenId ? (
                 <FactRow
                   label="父節點"
@@ -113,12 +117,14 @@ export default function TabletDetailPage(): React.ReactElement {
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2 pt-2">
-              <Link href={`/tablet/${tokenId}/chat`}>
-                <Button size="lg" variant="secondary">
-                  <MessagesSquare className="h-5 w-5" aria-hidden />
-                  啟動數位分身互動
-                </Button>
-              </Link>
+              <Button
+                size="lg"
+                variant="secondary"
+                onClick={() => setActivationOpen(true)}
+              >
+                <MessagesSquare className="h-5 w-5" aria-hidden />
+                啟動數位分身互動
+              </Button>
               {record.parentTokenId ? (
                 <Link href={`/lineage/${record.parentTokenId}`}>
                   <Button size="lg" variant="outline">
@@ -279,6 +285,13 @@ export default function TabletDetailPage(): React.ReactElement {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <PersonaActivationModal
+        tokenId={tokenId}
+        metadata={meta}
+        open={activationOpen}
+        onClose={() => setActivationOpen(false)}
+      />
     </div>
   );
 }

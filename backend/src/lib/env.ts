@@ -23,6 +23,28 @@ const EnvSchema = z.object({
   TRAINER_API_KEY: z.string().optional(),
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+
+  // Cloud-mode persona providers (optional). When set, the /cloud-* endpoints
+  // can answer chat / voice / portrait without needing the offline training
+  // pipeline + on-chain artifactURI.
+  // Chat: Anthropic preferred when both keys present (more reliable, cheaper),
+  // falls back to OpenAI. Voice/image still need OPENAI_API_KEY.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_CHAT_MODEL: z.string().default("claude-sonnet-4-6"),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_CHAT_MODEL: z.string().default("gpt-4o-mini"),
+  OPENAI_TTS_MODEL: z.string().default("tts-1"),
+  OPENAI_TTS_VOICE: z.string().default("shimmer"),
+  OPENAI_IMAGE_MODEL: z.string().default("gpt-image-1"),
+  ELEVENLABS_API_KEY: z.string().optional(),
+  ELEVENLABS_VOICE_ID: z.string().optional(),
+
+  // fal.ai — diffusion + video providers (Kling / Hailuo / Veo / FLUX). Used
+  // when set as alternative to / fallback for OpenAI image gen, and as the
+  // primary path for short-video generation (`/cloud-video`).
+  FAL_API_KEY: z.string().optional(),
+  FAL_IMAGE_MODEL: z.string().default("fal-ai/flux/schnell"),
+  FAL_VIDEO_MODEL: z.string().default("fal-ai/kling-video/v1.6/standard/text-to-video"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

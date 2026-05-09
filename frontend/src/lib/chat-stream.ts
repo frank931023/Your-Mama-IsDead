@@ -9,10 +9,13 @@ export interface StreamChatOptions {
   signal?: AbortSignal;
   onToken: (delta: string) => void;
   onEvent?: (event: { type: string; data: string }) => void;
+  /** "local" → /chat (compute service); "cloud" → /cloud-chat (OpenAI direct). */
+  mode?: "local" | "cloud";
 }
 
 /**
- * Consume SSE chat stream from `POST /api/personas/:id/chat`.
+ * Consume SSE chat stream. Routes to either the compute-backed `chat` or the
+ * cloud-API-backed `cloud-chat` endpoint based on `opts.mode`.
  *
  * Yields token deltas via `onToken` and resolves with the concatenated full
  * assistant message once the stream ends. Throws on HTTP error or abort.
@@ -24,7 +27,8 @@ export async function streamChat(
   jwt: string,
   opts: StreamChatOptions,
 ): Promise<string> {
-  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/chat`, {
+  const path = opts.mode === "cloud" ? "cloud-chat" : "chat";
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -60,8 +64,11 @@ export async function streamChat(
         if (!parsed) continue;
         opts.onEvent?.(parsed);
         if (parsed.type === "token") {
-          full += parsed.data;
-          opts.onToken(parsed.data);
+          // Cloud endpoint escapes \n → \\n so a single token frame can't be
+          // split across SSE frames. Reverse it here for rendering.
+          const text = parsed.data.replace(/\\n/g, "\n");
+          full += text;
+          opts.onToken(text);
         } else if (parsed.type === "done") {
           return full;
         } else if (parsed.type === "error") {
