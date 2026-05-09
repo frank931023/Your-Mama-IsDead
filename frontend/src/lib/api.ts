@@ -113,6 +113,16 @@ export async function getOwned(owner: string): Promise<TabletRecord[]> {
   return handle<TabletRecord[]>(res);
 }
 
+export async function getRegistry(): Promise<TabletRecord[]> {
+  const res = await fetch(`${BACKEND_URL}/api/tablets/registry`, { cache: "no-store" });
+  return handle<TabletRecord[]>(res);
+}
+
+export async function scanRegistry(): Promise<{ found: number; tablets: TabletRecord[] }> {
+  const res = await fetch(`${BACKEND_URL}/api/tablets/scan`, { method: "POST" });
+  return handle<{ found: number; tablets: TabletRecord[] }>(res);
+}
+
 export async function uploadRelay(
   file: File,
   onProgress?: (pct: number) => void,

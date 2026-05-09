@@ -94,6 +94,47 @@ async function syncOnce(tokenId: bigint): Promise<{
 }
 
 export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  // GET /api/tablets/registry  —  every tablet currently in DB, newest first.
+  app.get("/registry", async () => {
+    const rows = await prisma.tablet.findMany({ orderBy: { tokenId: "desc" } });
+    return rows.map(serializeTablet);
+  });
+
+  // POST /api/tablets/scan  —  probe the chain for token ids 1..MAX and sync each
+  // newly-found tablet into the DB. Stops after STOP_AFTER_MISSES consecutive
+  // ownerOf reverts. Returns the synced rows.
+  app.post("/scan", async (request, reply) => {
+    const MAX_PROBE = 200n;
+    const STOP_AFTER_MISSES = 5;
+
+    const found: bigint[] = [];
+    let misses = 0;
+    for (let i = 1n; i <= MAX_PROBE; i++) {
+      try {
+        await getOwnerOf(i);
+        found.push(i);
+        misses = 0;
+      } catch {
+        misses++;
+        if (misses >= STOP_AFTER_MISSES) break;
+      }
+    }
+
+    for (const id of found) {
+      try {
+        await syncOnce(id);
+      } catch (err) {
+        request.log.warn({ err, tokenId: id.toString() }, "scan: syncOnce failed");
+      }
+    }
+
+    const rows = await prisma.tablet.findMany({
+      where: { tokenId: { in: found } },
+      orderBy: { tokenId: "desc" },
+    });
+    return reply.send({ found: found.length, tablets: rows.map(serializeTablet) });
+  });
+
   // GET /api/tablets/:tokenId
   app.get("/:tokenId", async (request, reply) => {
     const params = TokenIdParam.safeParse(request.params);

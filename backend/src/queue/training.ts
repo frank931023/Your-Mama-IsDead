@@ -2,7 +2,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import { redis } from "../redis.js";
 import { prisma } from "../db.js";
 
-export const TRAINING_QUEUE_NAME = "dsas:training";
+export const TRAINING_QUEUE_NAME = "dsas-training";
 
 export interface TrainingJobPayload {
   jobId: string;

@@ -110,14 +110,17 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       return reply.code(400).send({ error: "no_file" });
     }
 
+    const filename = filePart.filename;
+    const contentType = filePart.mimetype || "application/octet-stream";
+
     const form = new FormData();
     form.append("file", filePart.file, {
-      filename: filePart.filename,
-      contentType: filePart.mimetype,
+      filename,
+      contentType,
     });
     form.append(
       "pinataMetadata",
-      JSON.stringify({ name: filePart.filename, keyvalues: { app: "DSAS" } }),
+      JSON.stringify({ name: filename, keyvalues: { app: "DSAS" } }),
     );
 
     try {
@@ -134,6 +137,8 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       return reply.send({
         cid: res.data.IpfsHash,
         uri: `ipfs://${res.data.IpfsHash}`,
+        name: filename,
+        contentType,
         size: res.data.PinSize,
       });
     } catch (err) {

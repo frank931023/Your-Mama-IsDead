@@ -87,7 +87,7 @@ export function useSiweLogin(tokenId?: string | number): SiweLoginState {
       const message = new SiweMessage({
         domain: typeof window !== "undefined" ? window.location.host : "dsas.app",
         address,
-        statement: "Sign in to DSAS · 數位塔位",
+        statement: "Sign in to DSAS (Digital Tablet)",
         uri: typeof window !== "undefined" ? window.location.origin : "https://dsas.app",
         version: "1",
         chainId: cid,

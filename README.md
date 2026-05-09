@@ -2,102 +2,223 @@
 
 > 主權數位先祖系統 / 數位塔位 prototype
 
-結合區塊鏈與生成式 AI 的數位永生服務。家屬透過 NFT 擁有逝者的數位分身,並能與其互動(對話、影像、聲音)。
+結合區塊鏈與生成式 AI 的數位永生服務。家屬透過 NFT 擁有逝者的數位分身，並能與其互動（對話、影像、聲音）。
 
-- 願景:[idea.md](idea.md)
-- 詳細工程規劃:[PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)
+- 願景：[idea.md](idea.md)
+- 詳細工程規劃：[PROTOTYPE_PLAN.md](PROTOTYPE_PLAN.md)
+- 架構說明：[docs/architecture.md](docs/architecture.md)
 
 ## Repo Layout
 
 | 模組 | 技術 | 範圍 | 文件 |
 |---|---|---|---|
-| [contracts/](contracts/) | Foundry, Solidity 0.8.24 | ERC-721 + ERC-6150 智能合約 + 19 個 Foundry 測試 | [docs/contracts.md](docs/contracts.md) |
-| [storage/](storage/) | TypeScript / ESM | IStorageProvider 抽象 + Pinata/web3storage/local/Irys driver + 6 平台 chatlog parsers + AES-256-GCM 加密 | [storage/README.md](storage/README.md) |
-| [compute/](compute/) | Python 3.11 + FastAPI | Persona/auth/assets routes + 完整 RAG engine + LoRA/TTS stub + LRU artifact cache | [compute/README.md](compute/README.md) |
-| [backend/](backend/) | Node.js + Fastify + Prisma | SIWE auth + Tablet/Upload/Job/Persona routes + Postgres + BullMQ | [backend/README.md](backend/README.md) |
-| [frontend/](frontend/) | Next.js 14 + wagmi v2 + RainbowKit | Mint 5-step flow + Chat (SSE 三軌同步) + 家族樹 + Dashboard | [frontend/README.md](frontend/README.md) |
-| [training/](training/) | Python pipelines | 7 步離線訓練 (fetch → caption → LoRA → voice → RAG → package → upload) | [training/README.md](training/README.md) |
-| [shared/types/](shared/types/) | TypeScript types | 跨服務共用型別 (TabletMetadata / ArtifactManifest) | — |
-| [docs/](docs/) | Markdown | [架構](docs/architecture.md) / [資料流](docs/data-flow.md) / [合約](docs/contracts.md) / [威脅模型](docs/threat-model.md) | — |
+| [contracts/](contracts/) | Foundry, Solidity 0.8.24 | ERC-721 + ERC-6150 智能合約 | [docs/contracts.md](docs/contracts.md) |
+| [storage/](storage/) | TypeScript / ESM | IStorageProvider 抽象 + 多 driver + 6 平台 chatlog parsers | [storage/README.md](storage/README.md) |
+| [compute/](compute/) | Python 3.11 + FastAPI | Persona / RAG / LoRA / TTS（GPU 推理服務） | [compute/README.md](compute/README.md) |
+| [backend/](backend/) | Node + Fastify + Prisma | SIWE auth、Tablet/Upload/Job/Persona routes、Postgres、BullMQ | [backend/README.md](backend/README.md) |
+| [frontend/](frontend/) | Next.js 14 + wagmi v2 + RainbowKit | Mint 5-step flow、Chat（SSE 三軌）、家族樹、Dashboard | [frontend/README.md](frontend/README.md) |
+| [training/](training/) | Python pipelines | 7 步離線訓練（fetch → caption → LoRA → voice → RAG → package → upload） | [training/README.md](training/README.md) |
+| [shared/types/](shared/types/) | TypeScript types | 跨服務共用型別（TabletMetadata / ArtifactManifest） | — |
 
-## Quick Start
+---
 
-```bash
-# 1. 環境變數
-cp .env.example .env
-# 填入 PINATA_JWT, OPENAI_API_KEY, NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID 等
+## Prerequisites
 
-# 2. 起本地服務 (postgres/redis/qdrant/minio)
-docker compose up -d
+啟動前你必須先準備好：
 
-# 3. 部署合約 (Sepolia testnet)
-cd contracts
-forge install
-forge test
-forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast
+| 工具 | 用途 | 怎麼裝 |
+|---|---|---|
+| **Node.js 20+** | backend / frontend | https://nodejs.org/ |
+| **Docker Desktop** | postgres / redis / qdrant / minio | https://www.docker.com/products/docker-desktop/ |
+| **Foundry** (`forge`、`cast`) | 編譯 / 部署合約 | `curl -L https://foundry.paradigm.xyz \| bash` 後 `foundryup` |
+| **Python 3.11+** *(僅當你要跑 compute / training)* | GPU 推理 + 離線訓練 | https://www.python.org/ |
+| **Pinata 帳號** | IPFS 存逝者素材（必要） | https://app.pinata.cloud/ → API Keys → 取 JWT |
+| **MetaMask / Rabby** | 連接錢包簽名 mint NFT | 瀏覽器外掛 |
+| WalletConnect Cloud projectId *(選擇性)* | 手機錢包掃 QR 連線 | https://cloud.reown.com/ |
+| OpenAI / ElevenLabs API key *(選擇性)* | LLM 對話 + 語音合成 | 各自官網 |
 
-# 4. 啟動後端
-cd ../backend
-pnpm install
-pnpm prisma migrate dev
-pnpm dev
+---
 
-# 5. 啟動 compute 服務
-cd ../compute
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+## First-Time Setup
 
-# 6. 啟動前端
-cd ../frontend
-pnpm install
-pnpm dev  # http://localhost:3000
+### 1. 複製 `.env`
 
-# 7. 線下訓練 (需 GPU, 在素材已上傳到 IPFS 後執行)
-cd ../training
-pip install -r requirements.txt
-python pipelines/01_fetch_assets.py --token-id 1
-# ... 02 ~ 07
+```powershell
+Copy-Item .env.example .env
 ```
 
-## End-to-End Demo Flow
+### 2. 填入必要 secrets
 
-1. 連 MetaMask (Sepolia) → 進 `/mint`
-2. 填逝者基本資料 (姓名/籍貫/生卒/陽世子孫)
-3. 上傳照片/影片/音檔/對話紀錄 → IPFS
-4. 簽名鑄造 NFT (ERC-721 + ERC-6150)
-5. (離線) 跑 training pipeline → artifact 回填到鏈上
-6. 進 `/tablet/[tokenId]` 點「啟動數位分身」
-7. SIWE 簽名驗證 → 三軌互動 (文字 + 影像 + 語音)
+打開 [.env](.env)，**至少填這幾個**才能跑通基本流程：
 
-## Build Status
+```ini
+# 鏈上（用 Sepolia 測試網）
+RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+DEPLOYER_PRIVATE_KEY=0x<你的測試錢包私鑰>
 
-實機驗證(2026-05-05):
+# IPFS（不填會 503）
+PINATA_JWT=eyJhbGciOi...
 
-| 模組 | Compile / Typecheck | Tests | 備註 |
-|---|---|---|---|
-| contracts | ✅ Solc 0.8.24 編譯通過 | ✅ **20/20 forge tests** | OpenZeppelin v5 + ERC-6150 minimal |
-| storage | ✅ tsc 通過 | ✅ **27/27 vitest** | 6 平台 chatlog parsers + Pinata 實作 |
-| backend | ✅ tsc 通過 | ✅ **8/8 vitest** | Fastify + Prisma client OK |
-| compute | ✅ Python 3.11 OK | ✅ **10/10 pytest** | RAG + LRU cache + lock dedup |
-| frontend | ✅ tsc 通過 | — | 965 packages, Next.js 14 |
-| training | ✅ py_compile 全過 | ✅ CLIs 響應 `--help` | 8 個 pipeline 腳本 |
+# JWT 簽名密鑰（隨機 32+ 字元）
+JWT_SECRET=<請改成隨機字串>
+```
 
-## What's Next (整合與部署)
+選擇性但建議：
 
-Prototype 程式骨架已全部就位。要實際跑通需要:
+```ini
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<reown projectId>  # 不填會在 console 噴 403，但功能不受影響
+OPENAI_API_KEY=sk-...                                    # 沒有就不能跑 chat
+```
 
-1. **安裝依賴**
-   - `cd contracts && forge install OpenZeppelin/openzeppelin-contracts foundry-rs/forge-std`
-   - 各 TypeScript 模組:`pnpm install`
-   - 各 Python 模組:`pip install -r requirements.txt`
-2. **填 secrets**:`PINATA_JWT`、`OPENAI_API_KEY`、`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`、`DEPLOYER_PRIVATE_KEY`
-3. **領 Sepolia ETH**:[sepoliafaucet.com](https://sepoliafaucet.com)
-4. **部署合約**,把地址寫回所有 `.env`
-5. **跑 backend / compute / frontend**,在 frontend 鑄第一張塔位
-6. **跑 training pipeline**(可在無 GPU 機器先跑 stub 驗證流程,真實訓練再上 GPU 機)
+> ⚠️ `DEPLOYER_PRIVATE_KEY` **絕對不要拿主網有錢的錢包私鑰**。產一個新地址，去 faucet 領 0.1 Sepolia ETH 就夠：
+> - https://sepoliafaucet.com/
+> - https://cloud.google.com/application/web3/faucet/ethereum/sepolia
 
-要把 LoRA / TTS 從 stub 換成真實推理,各檔案頂部都有 `REAL IMPLEMENTATION` 註解區塊指引。
+### 3. 部署合約（一次性）
+
+需要先部署一次拿到 `CONTRACT_ADDRESS`：
+
+```powershell
+# 重新載入 .env 到當前 PowerShell session
+. .\load-env.ps1
+
+# 編譯 + 部署
+cd contracts
+forge install
+forge script script/Deploy.s.sol --rpc-url $env:RPC_URL --broadcast
+```
+
+跑完最後幾行會印：
+
+```
+DigitalTablet deployed at: 0xAbCd1234...
+```
+
+把這個地址貼回 [.env](.env) **兩個** 欄位：
+
+```ini
+CONTRACT_ADDRESS=0xAbCd1234...
+NEXT_PUBLIC_CONTRACT_ADDRESS=0xAbCd1234...
+```
+
+---
+
+## Daily Startup（每次開發）
+
+**一鍵啟動：**
+
+```powershell
+.\start.ps1
+```
+
+[start.ps1](start.ps1) 會自動完成：
+
+1. 載入 `.env`
+2. `docker compose up -d`（postgres / redis / qdrant / minio）
+3. 等 postgres 健康
+4. 兩個專案沒裝過就 `npm install`
+5. `prisma generate + migrate`
+6. **彈一個 PowerShell 視窗跑 backend** (`http://localhost:4000`)
+7. **彈另一個 PowerShell 視窗跑 frontend** (`http://localhost:3000`)
+
+打開瀏覽器 → http://localhost:3000，開始用。
+
+**選用旗標：**
+
+```powershell
+.\start.ps1 -InfraOnly    # 只起 docker，不跑 app
+.\start.ps1 -SkipInstall  # 跳過 npm install
+.\start.ps1 -SkipMigrate  # 跳過 prisma migrate
+```
+
+**關閉：** 兩個 dev 視窗各自 `Ctrl+C`，再 `docker compose down` 收 db。
+
+---
+
+## Manual Startup（一個一個跑）
+
+如果不想用 `start.ps1`：
+
+```powershell
+# 0. 載入 env（每個新 terminal 都要做一次）
+. .\load-env.ps1
+
+# 1. 起基礎設施
+docker compose up -d
+
+# 2. Backend
+cd backend
+npm install                 # 第一次或改了 package.json
+npx prisma generate
+npx prisma migrate dev      # 第一次或改了 schema.prisma
+npm run dev                 # 跑在 :4000
+
+# 3. Frontend（另開一個 terminal）
+. .\load-env.ps1
+cd frontend
+npm install
+npm run dev                 # 跑在 :3000
+```
+
+要跑 compute / training（GPU 推理）：
+
+```powershell
+cd compute
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+---
+
+## Demo Flow（端到端走一次）
+
+1. 連 MetaMask（**Sepolia 網路**） → 進 `/mint`
+2. 填逝者基本資料（姓名 / 籍貫 / 生卒 / 陽世子孫）
+3. 上傳大頭照 + 其他素材 → 自動釘到 IPFS
+4. 簽署同意聲明 → 簽名鑄造 NFT（ERC-721 + ERC-6150）
+5. *(離線)* 跑 [training/](training/) pipeline → artifact 回填到鏈上
+6. 進 `/tablet/[tokenId]` → 點「啟動數位分身」
+7. SIWE 簽名驗證 → 三軌互動（文字 + 影像 + 語音）
+
+---
+
+## Common Pitfalls
+
+開發過程踩過的雷，請對照排除：
+
+| 症狀 | 根因 | 解 |
+|---|---|---|
+| `forge` 抱怨 `--rpc-url` 沒值 | PowerShell 的 `$RPC_URL` 是空的 | 用 `$env:RPC_URL`（注意 `env:` 前綴），或先 `. .\load-env.ps1` |
+| `npm run dev` → `Queue name cannot contain :` | BullMQ 不允許 queue 名稱含冒號 | 已修，名稱固定為 `dsas-training` |
+| `Error: unable to determine transport target for "pino-pretty"` | dev mode logger 套件沒裝 | `cd backend; npm install -D pino-pretty` |
+| 上傳檔案 → "Network error during upload" | backend 沒啟動 | 確認 `http://localhost:4000` 有回應；沒有就 `npm run dev` |
+| 上傳檔案 → 503 `pinata_not_configured` | `.env` 的 `PINATA_JWT` 是空的 | 去 https://app.pinata.cloud/ 申請 JWT 填進去，重啟 backend |
+| Console 噴 `api.web3modal.org ... 403` | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` 是空的 | 申請 https://cloud.reown.com/ 的 projectId 填進去；或忽略（不影響 MetaMask） |
+| Mint 後合約呼叫失敗 | `CONTRACT_ADDRESS` 沒更新 / 還是 `0x0...0` | 部署後把地址同時貼進 `CONTRACT_ADDRESS` 和 `NEXT_PUBLIC_CONTRACT_ADDRESS`，重啟 frontend |
+| `pnpm: 無法辨識` | 這個專案實際用 npm | 直接用 `npm install` / `npm run dev` |
+| 改了 `.env` 但 server 沒讀到 | dev server 啟動時就讀完了 | 重啟對應的 dev server (`Ctrl+C` 後再 `npm run dev`) |
+| Frontend 渲染縮圖崩 `toLowerCase of undefined` | localStorage 有舊版上傳 metadata | DevTools Console：`localStorage.removeItem('dsas:mint-draft:v1'); location.reload();` |
+
+---
+
+## Resetting State
+
+需要全部重來：
+
+```powershell
+# 清掉 docker volumes（postgres / redis / minio / qdrant 全部歸零）
+docker compose down -v
+
+# 清掉 mint 草稿（瀏覽器 DevTools Console）
+localStorage.clear()
+
+# 清掉 prisma migration history（如果 schema 大改）
+Remove-Item backend\prisma\migrations -Recurse -Force
+```
+
+---
 
 ## License
 

@@ -42,6 +42,7 @@ function SiteHeader(): React.ReactElement {
         <nav className="flex items-center gap-1 text-sm">
           <NavLink href="/mint">鑄造</NavLink>
           <NavLink href="/dashboard">我的塔位</NavLink>
+          <NavLink href="/registry">塔位總覽</NavLink>
         </nav>
         <div className="hidden md:block">
           <WalletConnect compact />
