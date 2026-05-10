@@ -54,6 +54,7 @@ function SiteHeader(): React.ReactElement {
           <NavLink href="/mint">鑄造</NavLink>
           <NavLink href="/dashboard">我的塔位</NavLink>
           <NavLink href="/registry">塔位總覽</NavLink>
+          <NavLink href="/baibai">線上靈堂</NavLink>
         </nav>
         <div className="hidden md:block">
           <WalletConnect compact />

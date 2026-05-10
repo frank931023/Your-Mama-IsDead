@@ -69,3 +69,17 @@ model Session {
   @@index([address])
   @@index([expiresAt])
 }
+
+/// 線上靈堂 (/baibai) 的留言。任何人都能留(不要求 SIWE 登入),只在
+/// 已連線錢包時自動把地址綁進來,讓家屬之後能看出哪些是自家人留的。
+model Tribute {
+  id           String   @id @default(cuid())
+  tokenId      BigInt
+  fromAddress  String?  // 留言者錢包地址(可選);未連線錢包時為 null
+  fromName     String?  // 顯示用名稱(可選);沒填就顯示「匿名訪客」
+  message      String   @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([tokenId])
+  @@index([createdAt])
+}

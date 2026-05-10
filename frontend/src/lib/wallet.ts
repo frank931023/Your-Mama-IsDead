@@ -19,12 +19,46 @@ import {
   useSignTypedData,
   useWriteContract,
 } from "wagmi";
-import { SiweMessage } from "siwe";
 import type { Address, Hex } from "viem";
 
 import { CONTRACT_ADDRESS, DIGITAL_TABLET_ABI } from "./contract";
 import { fetchAuthNonce, verifySiwe } from "./api";
 import { ACTIVE_CHAIN_ID } from "./wagmi";
+
+/**
+ * 手工組 EIP-4361 SIWE 訊息字串。
+ *
+ * 不直接用 siwe 套件是因為它在 client.js 引用 ethers,但專案用的是
+ * viem,沒裝 ethers,Next.js 打包會炸 "Module not found: ethers"。
+ * 既然 SIWE 訊息格式是固定的 spec,自己組字串比裝 ~250KB 的 ethers
+ * 划算。後端驗證仍由 siwe (Node 端) 處理。
+ *
+ * 規範: https://eips.ethereum.org/EIPS/eip-4361
+ */
+function buildSiweMessage(opts: {
+  domain: string;
+  address: string;
+  statement: string;
+  uri: string;
+  chainId: number;
+  nonce: string;
+  issuedAt: string;
+  version?: string;
+}): string {
+  const lines = [
+    `${opts.domain} wants you to sign in with your Ethereum account:`,
+    opts.address,
+    "",
+    opts.statement,
+    "",
+    `URI: ${opts.uri}`,
+    `Version: ${opts.version ?? "1"}`,
+    `Chain ID: ${opts.chainId}`,
+    `Nonce: ${opts.nonce}`,
+    `Issued At: ${opts.issuedAt}`,
+  ];
+  return lines.join("\n");
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Scenario #1 — connect wallet (re-export from RainbowKit, see WalletConnect.tsx)
@@ -101,7 +135,7 @@ export function useSiweLogin(tokenId?: string | number): SiweLoginState {
     setError(null);
     try {
       const { nonce } = await fetchAuthNonce(address);
-      const message = new SiweMessage({
+      const prepared = buildSiweMessage({
         domain: typeof window !== "undefined" ? window.location.host : "dsas.app",
         address,
         statement: "Sign in to DSAS (Digital Tablet)",
@@ -111,7 +145,6 @@ export function useSiweLogin(tokenId?: string | number): SiweLoginState {
         nonce,
         issuedAt: new Date().toISOString(),
       });
-      const prepared = message.prepareMessage();
       const signature = await signMessageAsync({ message: prepared });
       const tokenIdStr = tokenId !== undefined ? String(tokenId) : undefined;
       const { token: jwt } = await verifySiwe(prepared, signature, tokenIdStr);

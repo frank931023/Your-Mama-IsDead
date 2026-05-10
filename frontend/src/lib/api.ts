@@ -149,6 +149,32 @@ export async function getCloudStatus(): Promise<CloudStatus> {
   return handle<CloudStatus>(res);
 }
 
+export interface Tribute {
+  id: string;
+  tokenId: string;
+  fromAddress: string | null;
+  fromName: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export async function listTributes(tokenId: string | number): Promise<Tribute[]> {
+  const res = await fetch(`${BACKEND_URL}/api/tributes/${tokenId}`, { cache: "no-store" });
+  return handle<Tribute[]>(res);
+}
+
+export async function createTribute(
+  tokenId: string | number,
+  body: { message: string; fromName?: string; fromAddress?: string },
+): Promise<Tribute> {
+  const res = await fetch(`${BACKEND_URL}/api/tributes/${tokenId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handle<Tribute>(res);
+}
+
 /**
  * 上傳檔案到 backend → 由 backend 釘到 IPFS。
  *
