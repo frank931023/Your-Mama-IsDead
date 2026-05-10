@@ -5,12 +5,20 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC6150} from "./interfaces/IERC6150.sol";
 
-/// @title  DigitalTablet — DSAS prototype memorial NFT
-/// @notice ERC-721 + minimal ERC-6150 hierarchical NFT.
-///         Each token is a "digital tablet" (塔位) for one deceased person.
-///         Hierarchy mirrors the family tree: parentOf / childrenOf are the
-///         on-chain authoritative source for descendants.
-/// @dev    See PROTOTYPE_PLAN.md §三 for design rationale.
+/// @title  DigitalTablet — DSAS 數位塔位 NFT 合約
+/// @notice ERC-721 + 最小化 ERC-6150 階層式 NFT。每張 token 對應一位逝者的
+///         「數位塔位」(塔位即傳統靈骨塔的位置概念)。
+///
+///         合約用 ERC-6150 的 parentOf / childrenOf 在鏈上記錄家族脈絡,
+///         這是家譜的權威來源(metadata 內的 descendants 陣列只是
+///         可讀快照,鏈上才是真正的 source of truth)。
+///
+///         兩個獨立的 URI 欄位:
+///           tokenURI    — ERC-721 metadata (姓名/生平/素材列表),mint 時設定
+///           artifactURI — 訓練後的 LoRA + voice + RAG manifest,
+///                         由 setArtifactURI 後寫入,沒訓練前是空字串
+///
+/// @dev    詳細設計理由見 PROTOTYPE_PLAN.md §三。
 contract DigitalTablet is ERC721, AccessControl, IERC6150 {
     // ─── Roles ──────────────────────────────────────────────────────────────
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
@@ -46,10 +54,10 @@ contract DigitalTablet is ERC721, AccessControl, IERC6150 {
     }
 
     // ─── Mint: root ─────────────────────────────────────────────────────────
-    /// @notice Mint a root tablet (no parent). Restricted to MINTER_ROLE.
-    /// @param  to         Recipient.
-    /// @param  tokenURI_  ERC-721 metadata URI (ipfs:// or ar://).
-    /// @return tokenId    The newly minted root token id.
+    /// @notice 鑄造家族根節點(沒有父節點)。僅 MINTER_ROLE 持有者能呼叫。
+    /// @param  to         接收 NFT 的地址(通常是家屬本人)。
+    /// @param  tokenURI_  ERC-721 metadata URI (ipfs:// 或 ar://)。
+    /// @return tokenId    新鑄造的 token id(由內部計數器自動遞增)。
     function mintRoot(address to, string calldata tokenURI_)
         external
         onlyRole(MINTER_ROLE)
@@ -64,12 +72,12 @@ contract DigitalTablet is ERC721, AccessControl, IERC6150 {
     }
 
     // ─── Mint: with parent ──────────────────────────────────────────────────
-    /// @notice Mint a child tablet under `parentId`. Caller must own `parentId`
-    ///         OR hold `MINTER_ROLE`.
-    /// @param  to         Recipient.
-    /// @param  parentId   Parent tablet id (must exist).
-    /// @param  tokenURI_  ERC-721 metadata URI.
-    /// @return tokenId    The newly minted child token id.
+    /// @notice 在既有家族下鑄造子節點。呼叫者必須是父節點的擁有者
+    ///         或持有 MINTER_ROLE(管理員為其他家屬代鑄)。
+    /// @param  to         接收 NFT 的地址(通常是新加入家族的家屬)。
+    /// @param  parentId   父節點塔位 id(必須存在)。
+    /// @param  tokenURI_  ERC-721 metadata URI。
+    /// @return tokenId    新鑄造的 token id。
     function safeMintWithParent(address to, uint256 parentId, string calldata tokenURI_)
         external
         returns (uint256 tokenId)
@@ -92,7 +100,9 @@ contract DigitalTablet is ERC721, AccessControl, IERC6150 {
     }
 
     // ─── Artifact URI ───────────────────────────────────────────────────────
-    /// @notice Update the training-artifact URI for a tablet. Owner or MINTER_ROLE.
+    /// @notice 設定訓練 artifact 的 URI。離線訓練 pipeline 跑完後會呼叫此函式,
+    ///         把產出的 LoRA + voice + RAG manifest 的 IPFS CID 寫上鏈。
+    ///         僅 token owner 或 MINTER_ROLE 可呼叫。
     function setArtifactURI(uint256 tokenId, string calldata uri) external {
         if (!_tokenExists(tokenId)) revert TokenDoesNotExist(tokenId);
         address owner_ = _ownerOf(tokenId);

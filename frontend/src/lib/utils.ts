@@ -1,3 +1,12 @@
+/**
+ * Frontend 雜項共用 helpers
+ *
+ * - cn:Tailwind className 合併,自動處理衝突 (clsx + tailwind-merge)
+ * - ipfsToHttps:把 ipfs:// 或 ar:// 轉成可在 <img> 用的 https URL
+ * - formatDate / truncateAddress:資料顯示格式化
+ * - displayName / shortName:把 metadata 轉成人性化的稱呼,
+ *   避免介面上到處出現 "Tablet #3" 這類技術字串
+ */
 import clsx, { type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { TabletMetadata } from "@shared/types/tablet";

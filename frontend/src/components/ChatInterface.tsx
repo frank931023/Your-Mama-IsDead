@@ -1,5 +1,20 @@
 "use client";
 
+/**
+ * 三欄聊天介面 (主元件)
+ *
+ * 三個可拖拉欄位 (使用 react-resizable-panels):
+ *   ┌──────────────────────────┬────────────────┬──────────────┐
+ *   │ 對話視窗 (≥30%)          │ 肖像 (≥18%)    │ 語音+短片    │
+ *   │ - SIWE 登入流程          │ - 大頭照展示   │ - 自動播 TTS │
+ *   │ - 訊息串                  │ - AI 重生肖像  │ - 短片生成   │
+ *   │ - 文字輸入框              │                │              │
+ *   └──────────────────────────┴────────────────┴──────────────┘
+ *
+ * 對話走 SSE 串流 (chat-stream.ts),逐 token 顯示。
+ * 每則 assistant 回覆後自動觸發 cloud-voice 生成語音並 autoplay。
+ * 短片 / 重生肖像則為手動按鈕觸發 (因為 fal.ai 一次要付 $0.25)。
+ */
 import * as React from "react";
 import { Send, Loader2, AlertCircle, Volume2, Film, GripVertical } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -7,10 +22,17 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useError } from "@/components/ErrorDialog";
+import { ProgressBar } from "@/components/ProgressBar";
 import { useSiweLogin } from "@/lib/wallet";
 import { streamChat, type ChatMessage } from "@/lib/chat-stream";
 import { BACKEND_URL, fetchTablet, type TabletRecord } from "@/lib/api";
 import { ipfsToHttps, cn, shortName } from "@/lib/utils";
+
+// 影像 / 影片生成的「合理預期等待時間」(秒)
+// fal.ai FLUX schnell ~6s,gpt-image-1 ~15s → 取 12s 居中
+// fal.ai Kling v1.6 standard 5s clip ~60s,Hailuo 略長 → 取 60s
+const PORTRAIT_ETA_SECONDS = 12;
+const VIDEO_ETA_SECONDS = 60;
 
 interface ChatInterfaceProps {
   tokenId: string;
@@ -38,6 +60,14 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
   const [generatingPortrait, setGeneratingPortrait] = React.useState(false);
   const [generatingVideo, setGeneratingVideo] = React.useState(false);
   const abortRef = React.useRef<AbortController | null>(null);
+  const messagesScrollRef = React.useRef<HTMLDivElement | null>(null);
+
+  // 訊息更新時自動捲到底,避免使用者要手動往下滑看新回覆
+  React.useEffect(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   // Trigger SIWE on mount
   React.useEffect(() => {
@@ -71,6 +101,13 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     };
   }, []);
 
+  /**
+   * 送出訊息流程:
+   *   1. 先把 user 訊息和空的 assistant placeholder 都塞進 messages
+   *   2. 開 SSE 串流,onToken callback 把 delta 累加到 assistant 訊息
+   *   3. 串流結束後並行觸發 voice TTS (短片不自動,需手動點按鈕)
+   *   4. 任一步出錯 → 抽掉 placeholder + 彈 ErrorDialog
+   */
   const send = async (): Promise<void> => {
     const text = input.trim();
     if (!text || !token || sending) return;
@@ -160,8 +197,8 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       className="flex h-[70vh] w-full"
     >
       <Panel defaultSize="55%" minSize="30%" className="flex flex-col">
-      <Card className="flex h-full flex-col">
-        <div className="flex-1 overflow-y-auto p-4">
+      <Card className="flex h-full flex-col overflow-hidden">
+        <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4">
           {/* tablet load errors surface via modal (useError) */}
           {messages.length === 0 ? (
             <p className="text-sm text-ink-muted">
@@ -213,15 +250,15 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       <ResizeHandle />
 
       <Panel defaultSize="25%" minSize="18%" className="flex flex-col">
-      <Card className="flex h-full flex-col items-center justify-center gap-2 overflow-y-auto p-4">
+      <Card className="flex h-full flex-col items-center gap-2 overflow-hidden overflow-y-auto p-4">
         {portraitToShow ? (
           <img
             src={portraitToShow}
             alt={tablet?.metadata?.name ?? `tablet #${tokenId}`}
-            className="h-64 w-full rounded-md object-cover"
+            className="h-64 w-full shrink-0 rounded-md object-cover"
           />
         ) : (
-          <div className="flex h-64 w-full items-center justify-center rounded-md bg-paper-soft text-ink-muted">
+          <div className="flex h-64 w-full shrink-0 items-center justify-center rounded-md bg-paper-soft text-ink-muted">
             尚無肖像
           </div>
         )}
@@ -229,28 +266,35 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
           {tablet?.metadata?.name ?? `Tablet #${tokenId}`}
         </p>
         {mode === "cloud" && token ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={generatingPortrait}
-            onClick={() => {
-              setGeneratingPortrait(true);
-              const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && !m.pending);
-              const seed = lastAssistant?.content ?? "peaceful, looking into the distance";
-              void triggerPortrait(tokenId, seed.slice(0, 400), token, mode)
-                .then((res) => {
-                  if (res.url) setLatestPortrait(res.url);
-                  else if (res.error) showError("AI 肖像生成失敗", res.error);
-                })
-                .finally(() => setGeneratingPortrait(false));
-            }}
-          >
-            {generatingPortrait ? (
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-            ) : null}
-            AI 生成另一張肖像
-          </Button>
+          <div className="flex w-full flex-col gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={generatingPortrait}
+              onClick={() => {
+                setGeneratingPortrait(true);
+                const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && !m.pending);
+                const seed = lastAssistant?.content ?? "peaceful, looking into the distance";
+                void triggerPortrait(tokenId, seed.slice(0, 400), token, mode)
+                  .then((res) => {
+                    if (res.url) setLatestPortrait(res.url);
+                    else if (res.error) showError("AI 肖像生成失敗", res.error);
+                  })
+                  .finally(() => setGeneratingPortrait(false));
+              }}
+            >
+              {generatingPortrait ? (
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              ) : null}
+              {generatingPortrait ? "生成中…" : "AI 生成另一張肖像"}
+            </Button>
+            <ProgressBar
+              active={generatingPortrait}
+              etaSeconds={PORTRAIT_ETA_SECONDS}
+              label="AI 渲染肖像中..."
+            />
+          </div>
         ) : null}
       </Card>
       </Panel>
@@ -258,7 +302,7 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       <ResizeHandle />
 
       <Panel defaultSize="20%" minSize="15%" className="flex flex-col">
-      <Card className="flex h-full flex-col gap-3 overflow-y-auto p-4">
+      <Card className="flex h-full flex-col gap-3 overflow-hidden overflow-y-auto p-4">
         <h4 className="text-sm font-semibold text-ink">語音回應</h4>
         {latestAudio ? (
           <audio key={latestAudio} controls autoPlay className="w-full">
@@ -308,6 +352,16 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
               {generatingVideo ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Film className="h-3 w-3" aria-hidden />}
               {generatingVideo ? "生成中…" : "生成 5 秒短片"}
             </Button>
+            <ProgressBar
+              active={generatingVideo}
+              etaSeconds={VIDEO_ETA_SECONDS}
+              label="Kling 渲染中..."
+            />
+            {generatingVideo ? (
+              <p className="text-[10px] text-ink-muted">
+                fal.ai 排隊 + 渲染,實際時間視伺服器忙碌程度而定。
+              </p>
+            ) : null}
           </div>
         ) : null}
       </Card>

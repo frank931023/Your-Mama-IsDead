@@ -1,3 +1,15 @@
+/**
+ * 集中式環境變數載入 + 驗證
+ *
+ * 所有設定值都在這個檔案的 zod schema 集中,避免散落在各模組各自讀
+ * process.env 而出錯。啟動時若 schema 驗證失敗會直接 throw 並列出
+ * 缺失的欄位,讓開發者一眼看到該補哪些 .env 設定。
+ *
+ * 載入順序:
+ *   1. dotenv 自動讀根目錄 .env 寫入 process.env
+ *   2. zod schema 驗證並轉型 (e.g. CHAIN_ID 從字串 coerce 成 number)
+ *   3. 結果快取在 cached,後續 import { env } 直接拿
+ */
 import "dotenv/config";
 import { z } from "zod";
 
@@ -51,6 +63,10 @@ export type Env = z.infer<typeof EnvSchema>;
 
 let cached: Env | null = null;
 
+/**
+ * 第一次呼叫時讀取並驗證 process.env,後續呼叫直接回傳快取結果。
+ * 驗證失敗會 throw,把所有缺失欄位列在錯誤訊息裡。
+ */
 export function loadEnv(): Env {
   if (cached) return cached;
   const parsed = EnvSchema.safeParse(process.env);

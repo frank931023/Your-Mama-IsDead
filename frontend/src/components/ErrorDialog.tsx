@@ -1,5 +1,19 @@
 "use client";
 
+/**
+ * 全站統一錯誤 Modal + Context
+ *
+ * 用法:
+ *   const { showError } = useError();
+ *   showError("標題", e instanceof Error ? e.message : String(e));
+ *
+ * 設計重點:
+ *   - 用 React Context 全域分享,任何深度的元件都能彈訊息
+ *   - 多錯誤排隊顯示 (避免短時間連續錯誤被吞掉)
+ *   - 自動去重 (相同 title+detail 不會連彈兩次)
+ *   - ESC 或點背景關閉
+ *   - 將 Provider 包在 providers.tsx 最內層,確保 z-index 最高
+ */
 import * as React from "react";
 import { AlertTriangle, X } from "lucide-react";
 
@@ -17,7 +31,10 @@ interface ErrorContextValue {
 
 const ErrorContext = React.createContext<ErrorContextValue | null>(null);
 
-/** Wrap the app once (in providers.tsx). All children can call useError(). */
+/**
+ * 整個 App 只包一次(在 providers.tsx)。
+ * 所有子元件都可以 const { showError } = useError() 取得 hook。
+ */
 export function ErrorDialogProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [queue, setQueue] = React.useState<ErrorEntry[]>([]);
 

@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * 對話頁 (/tablet/[tokenId]/chat?mode=cloud|local)
+ *
+ * URL query string 的 mode 決定走哪條路徑:
+ *   - cloud: 直接打外部 API (OpenAI/Anthropic + ElevenLabs/fal.ai)
+ *   - local: 走 backend → compute service → 訓練好的 LoRA + RAG
+ *
+ * 進入這頁前會先彈 PersonaActivationModal 讓使用者選 mode,
+ * Modal 點完後 router.push 過來,query string 帶 mode=cloud。
+ */
 import * as React from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";

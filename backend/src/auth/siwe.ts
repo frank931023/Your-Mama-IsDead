@@ -1,12 +1,29 @@
+/**
+ * Sign-In With Ethereum (SIWE / EIP-4361) 驗證流程
+ *
+ * 流程概覽:
+ *   1. 前端打 GET /api/auth/nonce?address=0x... → 後端產生 nonce 寫進 DB
+ *   2. 前端用 nonce 組 SIWE message,請使用者在錢包簽名
+ *   3. 前端打 POST /api/auth/verify { message, signature }
+ *   4. 後端驗證簽名 + 比對 nonce 為一次性 + 簽發 JWT
+ *
+ * 安全要點:
+ *   - nonce 必須一次性 (used 欄位 + transaction)
+ *   - nonce TTL = 10 分鐘
+ *   - JWT 內 claim 只放 address,後續 owner 檢查再從鏈上查
+ */
 import { randomBytes } from "node:crypto";
 import { SiweMessage, generateNonce as siweGenerateNonce } from "siwe";
 import { getAddress } from "viem";
 import { prisma } from "../db.js";
 import { env } from "../lib/env.js";
 
-const NONCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const NONCE_TTL_MS = 10 * 60 * 1000; // nonce 有效期 10 分鐘
 
-/** SIWE-compliant nonce (alphanumeric, 8+ chars). */
+/**
+ * 產生符合 SIWE 規範的 nonce(英數字、至少 8 字元)。
+ * 優先用 siwe 套件的 helper,失敗則 fallback 到 16 byte hex。
+ */
 export function generateNonce(): string {
   // Prefer the package's helper, fall back to a 16-byte hex token.
   try {

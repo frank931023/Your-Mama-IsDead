@@ -1,3 +1,13 @@
+/**
+ * Frontend ↔ Backend HTTP API client
+ *
+ * 集中所有對 /api/* 的請求,讓元件不必重複處理 base URL / JWT header / 錯誤解析。
+ *
+ * 約定:
+ *   - 不在這裡彈 ErrorDialog,讓呼叫方 try/catch 後決定要不要彈
+ *   - 失敗一律 throw ApiError(包含 status + body),呼叫方拿 e.message 顯示即可
+ *   - JWT 由 useSiweLogin() 取得後傳入 (不全域存放)
+ */
 import type { TabletMetadata } from "@shared/types/tablet";
 
 const RAW_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
@@ -139,6 +149,12 @@ export async function getCloudStatus(): Promise<CloudStatus> {
   return handle<CloudStatus>(res);
 }
 
+/**
+ * 上傳檔案到 backend → 由 backend 釘到 IPFS。
+ *
+ * 走 XMLHttpRequest 是為了拿到 upload 進度事件 (fetch API 至今仍無法
+ * 監聽上傳進度)。SSR / 測試環境沒有 XHR 時 fallback 到 fetch。
+ */
 export async function uploadRelay(
   file: File,
   onProgress?: (pct: number) => void,

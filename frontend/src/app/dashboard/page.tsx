@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * 我的塔位 (/dashboard)
+ *
+ * 列出當前連線錢包持有的所有塔位 NFT。
+ *
+ * 注意:這頁只查 DB(走 GET /api/tablets?owner=0x...),不會主動 sync 鏈上。
+ * 如果剛 mint 但這頁看不到新塔位,代表 backend 還沒 sync,
+ * 可以去 /registry 點「掃描鏈上新鑄造」或進該塔位詳情頁觸發 lazy sync。
+ */
 import * as React from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";

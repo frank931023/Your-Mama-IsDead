@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * 家族樹視覺化元件 (使用 React Flow)
+ *
+ * 從 LineageNode (一棵塔位 NFT 的父子樹) 轉成 React Flow 的節點與邊,
+ * 用 dagre/手動 layout 排成樹狀,使用者可拖拉、縮放、迷你地圖。
+ *
+ * 點擊節點 → router.push 到該塔位詳情頁。
+ *
+ * 注意:資料來源是 backend /api/tablets/:rootId/lineage,深度上限 6 層。
+ */
 import * as React from "react";
 import ReactFlow, {
   Background,

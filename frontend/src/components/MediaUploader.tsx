@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * 多檔案 IPFS 上傳元件
+ *
+ * 拖拉或點擊選檔 → 透過 backend /api/uploads/relay 釘到 IPFS。
+ * 每個檔案各自有上傳進度條;失敗的整批彈 ErrorDialog 列出失敗原因。
+ *
+ * 三種使用模式 (透過 props):
+ *   - single=true        只保留最後一個成功的 (用於大頭照)
+ *   - multiple=true      可多選 (預設;照片牆/影音都用這個)
+ *   - multiple=false     單檔但不限制歷史 (沒在用)
+ */
 import * as React from "react";
 import { Loader2, Upload, X, FileText, Image as ImageIcon, Music, Film } from "lucide-react";
 

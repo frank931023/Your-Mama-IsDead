@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * 單一塔位詳情頁 (/tablet/[tokenId])
+ *
+ * 顯示:
+ *   - 大頭照 + 姓名 + 生卒籍貫 + 墓誌銘
+ *   - 啟動數位分身按鈕 (打開 PersonaActivationModal)
+ *   - 家族樹連結
+ *   - Tabs:生平 / 照片牆 / 影音 / 子孫快照 / 對話紀錄
+ *
+ * 進這頁會打 GET /api/tablets/:tokenId,如果 DB 還沒這筆 backend 會
+ * lazy sync 從鏈上抓,所以剛 mint 完直接點進來也看得到。
+ */
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";

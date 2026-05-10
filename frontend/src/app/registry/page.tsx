@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * 塔位總覽頁 (/registry)
+ *
+ * 列出 backend DB 已知的所有塔位,提供兩種視圖:
+ *   - bento (預設) 卡片格,3~4 欄,適合瀏覽
+ *   - table        表格,適合對 IPFS CID 等技術細節
+ *
+ * 兩個關鍵動作:
+ *   - 重新整理       重讀 DB
+ *   - 掃描鏈上新鑄造  打 POST /api/tablets/scan,backend 從 tokenId=1 開始
+ *                   往上 probe,把鏈上有但 DB 沒的塔位 sync 進來
+ */
 import * as React from "react";
 import Link from "next/link";
 import { ExternalLink, Loader2, RefreshCw, LayoutGrid, List } from "lucide-react";

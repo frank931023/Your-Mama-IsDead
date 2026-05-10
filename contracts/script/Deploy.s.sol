@@ -4,11 +4,14 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {DigitalTablet} from "../src/DigitalTablet.sol";
 
-/// @title  Deploy
-/// @notice Deploys DigitalTablet using DEPLOYER_PRIVATE_KEY from env.
-/// @dev    Run:
-///   forge script script/Deploy.s.sol:Deploy \
-///     --rpc-url $SEPOLIA_RPC_URL --broadcast --verify -vvvv
+/// @title  DigitalTablet 部署腳本
+/// @notice 從環境變數 DEPLOYER_PRIVATE_KEY 取私鑰,部署 DigitalTablet。
+///         部署後在 console 列印合約地址,記得貼回 .env 的 CONTRACT_ADDRESS
+///         與 NEXT_PUBLIC_CONTRACT_ADDRESS 兩個欄位。
+/// @dev    執行範例 (PowerShell):
+///   . .\load-env.ps1
+///   cd contracts
+///   forge script script/Deploy.s.sol:Deploy --rpc-url $env:RPC_URL --broadcast
 contract Deploy is Script {
     function run() external returns (DigitalTablet tablet) {
         uint256 pk = vm.envUint("DEPLOYER_PRIVATE_KEY");

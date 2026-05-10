@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * 錢包連線按鈕(整個站的右上角)
+ *
+ * 包裝 RainbowKit 的 ConnectButton,額外處理「連線了但鏈錯」的情況:
+ * 如果使用者在 Mainnet 但這站只支援 Sepolia,會冒出黃底警告 + 一鍵切鏈按鈕。
+ *
+ * compact prop 控制顯示樣式:layout 用 compact (只顯示縮短地址),
+ * 其他地方用完整版 (帶 ENS 名稱 / 餘額 / 大頭像)。
+ */
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useSwitchChain } from "wagmi";
 import { AlertTriangle } from "lucide-react";

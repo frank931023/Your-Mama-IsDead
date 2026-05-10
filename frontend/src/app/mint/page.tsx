@@ -1,5 +1,18 @@
 "use client";
 
+/**
+ * 鑄造塔位流程 (/mint)
+ *
+ * 五步驟向導:
+ *   0. 基本資料         姓名/籍貫/生卒/生平
+ *   1. 上傳素材         大頭照(必填) + 照片/影音/文字/對話紀錄
+ *   2. 陽世子孫快照     metadata 內的非權威來源(權威是鏈上 ERC-6150)
+ *   3. 家族脈絡 + 同意   根節點 or 子節點 + 同意聲明
+ *   4. 簽名鑄造         上傳 metadata 到 IPFS → mintRoot/safeMintWithParent
+ *
+ * 草稿存 localStorage (key=DRAFT_KEY),關掉瀏覽器再開仍保留。
+ * 鑄造成功後會自動清掉草稿。
+ */
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
@@ -175,6 +188,15 @@ function MintFlow(): React.ReactElement {
     return true;
   })();
 
+  /**
+   * 鑄造主流程:
+   *   1. 從 draft 組裝 TabletMetadata (符合 ERC-721 + DSAS extension schema)
+   *   2. 上傳 metadata.json 到 IPFS,拿到 ipfs://<CID>
+   *   3. 呼叫合約 mintRoot 或 safeMintWithParent
+   *   4. 成功後清掉 localStorage 草稿
+   *
+   * 任一步出錯都會彈 ErrorDialog,並把 submitState 切回 error 讓使用者重試。
+   */
   const submit = async (): Promise<void> => {
     if (!address) {
       showError("請先連接錢包", "鑄造前需要先連接您的錢包以簽署交易。");

@@ -1,3 +1,20 @@
+/**
+ * 塔位 (Tablet) 相關 HTTP 路由
+ *
+ * 端點:
+ *   GET  /api/tablets/registry             列出 DB 所有塔位
+ *   POST /api/tablets/scan                 從鏈上 1..200 探測新塔位並 sync 進 DB
+ *   GET  /api/tablets/:tokenId             單一塔位詳情(會做 lazy sync)
+ *   GET  /api/tablets/by-owner/:address    依 owner 查詢(legacy)
+ *   GET  /api/tablets?owner=0x...          依 owner 查詢(frontend 主用)
+ *   POST /api/tablets/:tokenId/sync        強制重新從鏈上同步單一塔位
+ *   GET  /api/tablets/:tokenId/lineage     家族樹 (BFS,深度上限 6)
+ *
+ * 設計重點:
+ *   - DB 是鏈上資料的快取,鏈上才是真實來源
+ *   - lazy sync:第一次有人查 :tokenId 才把該塔位寫進 DB
+ *   - children 不快取,每次都即時讀鏈,因為新增子節點不會主動通知後端
+ */
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { getAddress, isAddress } from "viem";
 import { z } from "zod";
@@ -43,6 +60,12 @@ function serializeTablet(t: {
   };
 }
 
+/**
+ * 從鏈上抓單一塔位的 owner / tokenURI / artifactURI / parentId,
+ * 並順帶把 metadata.json 從 IPFS 拉回來,upsert 進 DB。
+ *
+ * 此函式是冪等的:重複呼叫只是把資料更新到最新狀態。
+ */
 async function syncOnce(tokenId: bigint): Promise<{
   owner: string;
   tokenURI: string;

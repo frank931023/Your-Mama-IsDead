@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * 同意聲明表單
+ *
+ * 鑄造塔位前必須勾選的法律與倫理聲明。產生的 Consent 物件會被塞進
+ * metadata.dsas.consent,跟著一起永久封存到 IPFS,鏈上 metadata 也指向它,
+ * 作為「家屬有權處置這份記憶」的不可竄改證據。
+ *
+ * 欄位:declaredBy (錢包地址) / statement / signedAt / 可選 signature。
+ */
 import * as React from "react";
 import { useAccount, useSignMessage } from "wagmi";
 

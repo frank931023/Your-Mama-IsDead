@@ -1,3 +1,16 @@
+/**
+ * SSE 對話串流客戶端
+ *
+ * 從 backend 的 /chat 或 /cloud-chat 端點消費 Server-Sent Events,
+ * 把 token deltas 一個一個 callback 給 UI 即時 render。
+ *
+ * SSE frame 格式約定:
+ *   event: token | done | error
+ *   data:  <text>
+ *
+ * 注意:cloud-chat 端點會把 \n escape 成 \\n 避免被 SSE 框格切斷,
+ * 這邊收到要 unescape 回去。
+ */
 import { BACKEND_URL } from "./api";
 
 export interface ChatMessage {

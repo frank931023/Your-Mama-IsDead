@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * DigitalTablet 合約 ABI 與位址常數
+ *
+ * 這份 ABI 是給 frontend 的(包含 mint / setArtifactURI 等寫入方法)。
+ * Backend 那邊有自己的最小化讀取 ABI 在 backend/src/chain.ts。
+ *
+ * NEXT_PUBLIC_CONTRACT_ADDRESS 部署完合約後要記得更新 .env,
+ * 不然這裡會 throw "CONTRACT_ADDRESS not configured"。
+ */
 import {
   useReadContract,
   useWriteContract,

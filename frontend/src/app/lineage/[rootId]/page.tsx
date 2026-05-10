@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * 家族樹頁 (/lineage/[rootId])
+ *
+ * 從某個塔位作為根節點往下展開整棵家族脈絡,深度上限 6 層
+ * (BFS 由 backend 控制,避免無限遞迴 + RPC 過載)。
+ *
+ * 視覺化用 React Flow,節點可拖拉、縮放、迷你地圖。
+ * 點任一節點會 router.push 到對應塔位詳情頁。
+ */
 import * as React from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";

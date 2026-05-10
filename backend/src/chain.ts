@@ -1,3 +1,12 @@
+/**
+ * 鏈上互動層
+ *
+ * 封裝後端對 DigitalTablet 合約的所有唯讀呼叫。寫入 (mint / setArtifactURI)
+ * 一律由前端錢包簽署,後端不持有任何能寫鏈的私鑰(除了訓練 worker 的
+ * setArtifactURI,那個獨立另外處理)。
+ *
+ * 使用 viem 的 PublicClient,RPC 由 env.RPC_URL 指定(預設 Sepolia)。
+ */
 import {
   createPublicClient,
   http,
@@ -10,8 +19,8 @@ import { mainnet, sepolia, baseSepolia } from "viem/chains";
 import { env } from "./lib/env.js";
 
 /**
- * Minimal ABI fragments for DigitalTablet (ERC-721 + ERC-6150 + DSAS).
- * Only the read methods used by the backend are listed.
+ * DigitalTablet 合約最小 ABI 片段 (ERC-721 + ERC-6150 + DSAS)。
+ * 只列出後端會呼叫的唯讀方法,寫入相關的留給 frontend/lib/contract.ts。
  */
 export const DIGITAL_TABLET_ABI = [
   {
@@ -53,6 +62,10 @@ export const DIGITAL_TABLET_ABI = [
 
 const CONTRACT: Address = env.CONTRACT_ADDRESS as Address;
 
+/**
+ * 把 env.CHAIN_ID 對應到 viem 的 Chain 設定物件。
+ * 已知鏈用內建定義,未知鏈 (例如本地 anvil) 即時用 RPC_URL 組一個。
+ */
 function resolveChain(chainId: number): Chain {
   switch (chainId) {
     case mainnet.id:
@@ -62,7 +75,7 @@ function resolveChain(chainId: number): Chain {
     case baseSepolia.id:
       return baseSepolia;
     default:
-      // Define an ad-hoc chain when an unknown id is supplied (e.g. local anvil).
+      // 未知 chainId(例如本地 anvil)即時定義一個 chain
       return defineChain({
         id: chainId,
         name: `chain-${chainId}`,
@@ -77,6 +90,7 @@ export const publicClient: PublicClient = createPublicClient({
   transport: http(env.RPC_URL),
 });
 
+/** 查詢某個 tokenId 目前的擁有者地址。Token 不存在會 throw。 */
 export async function getOwnerOf(tokenId: bigint): Promise<`0x${string}`> {
   const owner = (await publicClient.readContract({
     address: CONTRACT,
@@ -87,6 +101,7 @@ export async function getOwnerOf(tokenId: bigint): Promise<`0x${string}`> {
   return owner;
 }
 
+/** 取得塔位的 ERC-721 metadata URI(通常是 ipfs://Qm...)。 */
 export async function getTokenURI(tokenId: bigint): Promise<string> {
   return (await publicClient.readContract({
     address: CONTRACT,
@@ -96,6 +111,7 @@ export async function getTokenURI(tokenId: bigint): Promise<string> {
   })) as string;
 }
 
+/** 取得訓練後的 artifact URI (LoRA + voice + RAG manifest)。未訓練則為空字串。 */
 export async function getArtifactURI(tokenId: bigint): Promise<string> {
   return (await publicClient.readContract({
     address: CONTRACT,
@@ -105,6 +121,7 @@ export async function getArtifactURI(tokenId: bigint): Promise<string> {
   })) as string;
 }
 
+/** ERC-6150:取父節點 tokenId。回 0 代表是家族根節點。 */
 export async function getParentOf(tokenId: bigint): Promise<bigint> {
   return (await publicClient.readContract({
     address: CONTRACT,
@@ -114,6 +131,7 @@ export async function getParentOf(tokenId: bigint): Promise<bigint> {
   })) as bigint;
 }
 
+/** ERC-6150:取所有子節點 tokenId。回空陣列代表是葉節點。 */
 export async function getChildrenOf(tokenId: bigint): Promise<bigint[]> {
   const result = (await publicClient.readContract({
     address: CONTRACT,

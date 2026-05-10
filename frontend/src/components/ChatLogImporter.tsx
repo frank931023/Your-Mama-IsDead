@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * 對話紀錄匯入元件
+ *
+ * 跟一般檔案上傳不同的是,這裡每筆紀錄要附上「平台」與「格式」標籤,
+ * 讓未來的離線訓練 pipeline 知道用哪個 parser (LINE / WhatsApp / Discord
+ * 各自格式不同)。
+ *
+ * 預設選了某平台後會自動帶入該平台常用的檔案格式 (LINE→txt, FB→json…)。
+ * 也可拖拉多檔一次上傳 (隱藏在 details 裡的 MediaUploader)。
+ */
 import * as React from "react";
 
 import { MediaUploader } from "@/components/MediaUploader";

@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * 鏈保護元件:Children 只在「錢包已連線且網路正確」時才 render。
+ *
+ * 三種狀態的 fallback:
+ *   1. 錢包未連線    顯示「請連接錢包」+ Connect 按鈕
+ *   2. 錢包在錯的鏈  顯示「請切換到 Sepolia」+ 一鍵切鏈按鈕
+ *   3. 一切正常      直接 render children
+ *
+ * 用法:把需要鏈互動的頁面內容包進來,例如 /mint /dashboard /chat。
+ */
 import { type ReactNode } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { AlertCircle } from "lucide-react";

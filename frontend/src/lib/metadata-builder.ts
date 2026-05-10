@@ -1,3 +1,12 @@
+/**
+ * Tablet metadata 組裝器
+ *
+ * 把 mint flow 收集到的零散欄位 (deceased / assets / descendants / consent)
+ * 組成符合 ERC-721 metadata standard + DSAS extension 的 JSON。
+ *
+ * 這個 JSON 會被序列化後上傳到 IPFS,CID 寫進 tokenURI。
+ * 結構定義在 shared/types/tablet.ts。
+ */
 import type {
   Artifact,
   Assets,

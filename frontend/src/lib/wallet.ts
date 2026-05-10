@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * 錢包相關 React hooks 集中地
+ *
+ * 提供四個情境的 hook:
+ *   1. useSiweLogin       SIWE 登入,簽名後拿 JWT 存 sessionStorage
+ *   2. useMintTablet      鑄造塔位 NFT (mintRoot / safeMintWithParent)
+ *   3. useSetArtifactURI  訓練完後寫入 artifact CID 到鏈上
+ *   4. useDeriveEncryptionKey  EIP-712 簽名導出 AES-GCM 金鑰 (本地加密用)
+ *
+ * 還有一個 useIsCorrectChain helper 給 ChainGuard 元件用。
+ */
 import { useCallback, useEffect, useState } from "react";
 import {
   useAccount,
@@ -65,6 +76,12 @@ function writeToken(
   }
 }
 
+/**
+ * SIWE 登入 hook。token 拿到後存 sessionStorage,key 含 address + tokenId,
+ * 這樣換錢包或換塔位會各自獨立 token,不會混。
+ *
+ * @param tokenId 對哪個塔位驗證(讓 backend 可以做 owner check)
+ */
 export function useSiweLogin(tokenId?: string | number): SiweLoginState {
   const { address, chainId } = useAccount();
   const { signMessageAsync } = useSignMessage();
@@ -126,6 +143,11 @@ export interface MintResult {
   hash: Hex;
 }
 
+/**
+ * 鑄造塔位 hook。提供兩種:
+ *   - mintRoot         鑄造新家族的根節點 (parent = 0)
+ *   - mintWithParent   在既有家族下鑄造子節點,需要父節點的 owner 簽署
+ */
 export function useMintTablet(): {
   mintRoot: (to: Address, metadataUri: string) => Promise<MintResult>;
   mintWithParent: (to: Address, parentId: bigint, metadataUri: string) => Promise<MintResult>;
@@ -207,9 +229,14 @@ const KEY_TYPES = {
 } as const;
 
 /**
- * Derive a 256-bit AES-GCM key from the user's wallet via EIP-712 typed data
- * + HKDF-SHA256. The signature is used as Input Key Material — the key never
- * leaves the user's machine.
+ * 從錢包簽名導出 256-bit AES-GCM 對稱金鑰。
+ *
+ * 流程:EIP-712 typed data → 錢包簽名 → 簽名當 IKM → HKDF-SHA256 → AES-GCM key
+ *
+ * 用途:本地素材加密 (家屬不希望某些對話/影音放公開 IPFS 也能讀)。
+ * 私鑰永遠不離開錢包,所以這個對稱金鑰也是衍生而來、不會落地。
+ *
+ * 注意:同一錢包 + 同 tokenId + 同 context 會推出同一把金鑰 (deterministic)。
  */
 export function useDeriveEncryptionKey(): {
   deriveKey: (tokenId: bigint | string | number, context?: string) => Promise<CryptoKey>;

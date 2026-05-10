@@ -1,10 +1,18 @@
+/**
+ * Fastify preHandler middleware:身份與所有權檢查
+ *
+ * - requireAuth        驗證 Authorization: Bearer <JWT>
+ * - requireOwner(...)  進一步要求 JWT principal 必須是該 tokenId 的鏈上 owner
+ *
+ * 設計重點:owner 檢查直接讀鏈,不信任 DB,因為 NFT 可能轉手後 DB 還沒 sync。
+ */
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
 import { getAddress } from "viem";
 import { getOwnerOf } from "../chain.js";
 
 /**
- * preHandler that verifies the bearer JWT issued by /api/auth/verify.
- * On success, `request.user.address` is populated by @fastify/jwt.
+ * 驗證 /api/auth/verify 簽發的 Bearer JWT。
+ * 成功後 @fastify/jwt 會把 payload 寫到 request.user。
  */
 export const requireAuth: preHandlerHookHandler = async (
   request: FastifyRequest,
@@ -19,9 +27,12 @@ export const requireAuth: preHandlerHookHandler = async (
 };
 
 /**
- * Higher-order preHandler that ensures the JWT principal owns `tokenId`
- * (read from `request.params[paramName]`, default "tokenId") on chain.
- * Must run *after* requireAuth.
+ * 高階 middleware:確認 JWT 的擁有者就是該 tokenId 在鏈上的 owner。
+ *
+ * 用法: { preHandler: [requireAuth, requireOwner("tokenId")] }
+ * 必須掛在 requireAuth 之後,因為要讀 request.user.address。
+ *
+ * @param paramName route param 名稱,預設 "tokenId"
  */
 export function requireOwner(paramName: string = "tokenId"): preHandlerHookHandler {
   return async (request: FastifyRequest, reply: FastifyReply) => {

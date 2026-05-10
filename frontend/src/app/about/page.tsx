@@ -1,3 +1,13 @@
+/**
+ * 關於頁 (/about)
+ *
+ * 整站入口級別的介紹頁,給第一次來的訪客看,內容三段:
+ *   1. 為什麼我們做這件事(感性)
+ *   2. 技術細節(理性,鏈上家譜 / IPFS / 兩種喚起方式 / 同意 / AI / 開源)
+ *   3. 流程一覽(封存 → 鑄造 → 喚起)
+ *
+ * 純 server component,無互動,純展示用。
+ */
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Sparkles, Shield, HardDrive, MessagesSquare, FileText, GitBranch } from "lucide-react";

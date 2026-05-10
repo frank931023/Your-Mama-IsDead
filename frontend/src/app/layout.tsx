@@ -1,3 +1,13 @@
+/**
+ * Next.js App Router root layout
+ *
+ * 包住所有頁面共用的 chrome:
+ *   - <SiteHeader>  頂部導覽列 + 錢包連線按鈕
+ *   - <main>        實際頁面內容
+ *   - <SiteFooter>  底部版權聲明
+ *
+ * Providers 在內層套上 wagmi / RainbowKit / 錯誤 modal context。
+ */
 import type { Metadata } from "next";
 import Link from "next/link";
 

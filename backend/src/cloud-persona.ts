@@ -1,12 +1,21 @@
 /**
- * Cloud-mode persona helpers — bypass the offline training pipeline by
- * proxying directly to OpenAI (and optionally ElevenLabs).
+ * 雲端模式 (Cloud Mode) Persona 推理層
  *
- * Used by /api/personas/:tokenId/cloud-* endpoints when the user picks
- * "雲端 API 即時啟用" in the activation modal.
+ * 用途:當使用者在「啟動數位分身」modal 點選「雲端即時喚起」時,
+ * 跳過離線 training pipeline + on-chain artifactURI 限制,直接打外部
+ * API 即時生成對話 / 語音 / 影像 / 短片。
  *
- * Stability priority: single-provider OpenAI for chat + voice + image.
- * Drop in ElevenLabs voice cloning if ELEVENLABS_API_KEY is configured.
+ * 供應商路由規則:
+ *   ┌───────┬──────────────────────────────────────────────────┐
+ *   │ 功能  │ 供應商選擇順序                                    │
+ *   ├───────┼──────────────────────────────────────────────────┤
+ *   │ Chat  │ Anthropic Claude → OpenAI GPT-4o-mini             │
+ *   │ Voice │ ElevenLabs (有 voice id) → OpenAI TTS             │
+ *   │ Image │ fal.ai FLUX → OpenAI gpt-image-1                  │
+ *   │ Video │ fal.ai Kling (唯一管道)                          │
+ *   └───────┴──────────────────────────────────────────────────┘
+ *
+ * 設計重點:所有外部 API 細節集中在這個檔案,switch provider 只要改這裡。
  */
 
 import axios from "axios";
@@ -24,11 +33,13 @@ export interface ChatTurn {
 }
 
 /**
- * Build a system prompt that turns gpt-4o-mini into the deceased.
+ * 組裝 system prompt,讓 LLM 進入「逝者本人」的角色扮演。
  *
- * We feed: deceased name, biography, dates, relations, and a small sample of
- * chatlog excerpts when they exist. The on-chain metadata is the only source
- * (no GPU training, no LoRA).
+ * 餵進去的素材:姓名、籍貫、生卒、傳記、墓誌銘、子孫名單。
+ * 這些全部來自鏈上 metadata,沒有任何 GPU 訓練,沒有 LoRA。
+ *
+ * 角色設定原則:用第一人稱、保持溫暖、無法回答的事誠實承認,
+ * 並會 mirror 使用者的語言(中文/英文都會)。
  */
 export function buildPersonaSystemPrompt(metadata: TabletMetadata): string {
   const d = metadata.dsas.deceased;
@@ -64,9 +75,8 @@ export function buildPersonaSystemPrompt(metadata: TabletMetadata): string {
 }
 
 /**
- * Stream chat completion deltas. Routes between providers based on which keys
- * are configured. Anthropic is preferred (more reliable, cheaper) when both
- * are set.
+ * 串流回傳 LLM token deltas。根據 .env 中哪些 API key 有設定自動選 provider。
+ * 兩家都有設定時,優先用 Anthropic(較穩、較便宜、中文較自然)。
  */
 export async function* streamPersonaChat(
   messages: ChatTurn[],
@@ -83,7 +93,10 @@ export async function* streamPersonaChat(
   throw new Error("no chat provider configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY)");
 }
 
-/** Stream chat completion deltas from Anthropic Messages API. */
+/**
+ * 從 Anthropic Messages API 串流 token。
+ * 注意:Anthropic 的 system prompt 是獨立欄位,不是 messages 陣列裡的 role。
+ */
 export async function* streamAnthropicChat(
   messages: ChatTurn[],
   signal?: AbortSignal,
@@ -147,7 +160,7 @@ export async function* streamAnthropicChat(
   }
 }
 
-/** Stream chat completion deltas from OpenAI Chat Completions API. */
+/** 從 OpenAI Chat Completions API 串流 token deltas。 */
 export async function* streamOpenAIChat(
   messages: ChatTurn[],
   signal?: AbortSignal,
@@ -201,7 +214,10 @@ export async function* streamOpenAIChat(
   }
 }
 
-/** Voice synthesis. Prefers ElevenLabs when configured, falls back to OpenAI TTS. */
+/**
+ * 語音合成。優先用 ElevenLabs(支援 voice cloning,品質較好),
+ * 否則 fallback 到 OpenAI TTS。回傳音訊 buffer + content-type。
+ */
 export async function synthesizeVoice(text: string): Promise<{
   audio: Buffer;
   contentType: string;
@@ -245,10 +261,12 @@ export async function synthesizeVoice(text: string): Promise<{
 }
 
 /**
- * Generate an image. Prefers fal.ai when configured (cheaper + more diverse
- * models including FLUX); falls back to OpenAI gpt-image-1.
+ * 生成圖片。fal.ai 設了就優先 (FLUX schnell ~$0.003/張,模型選擇也多),
+ * 否則 fallback 到 OpenAI gpt-image-1 (~$0.04/張)。
  *
- * Returns a data URI / https URL the frontend can <img src=…> directly.
+ * 回傳值是可以直接塞進 <img src=...> 的 URL:
+ *   - fal.ai 路徑:回 https URL
+ *   - OpenAI 路徑:回 data:image/png;base64,... URI
  */
 export async function generateImageDataUrl(prompt: string): Promise<string> {
   if (env.FAL_API_KEY) {
@@ -279,12 +297,11 @@ export async function generateImageDataUrl(prompt: string): Promise<string> {
 }
 
 /**
- * Generate a short video (5–10s) from a text prompt using fal.ai (Kling /
- * Hailuo / Veo). Returns the video URL once rendering completes. Polls the
- * fal queue until status === COMPLETED.
+ * 從文字 prompt 生成 5~10 秒短片 (使用 fal.ai 上的 Kling / Hailuo / Veo)。
  *
- * Stable + Asia-friendly: defaults to Kling v1.6 standard. Override via
- * FAL_VIDEO_MODEL env var.
+ * fal.ai 是 async queue API,要 polling 等渲染完成 (約 30~90 秒)。
+ * 預設用 Kling v1.6 standard,因為對亞洲面孔/中文場景描述支援較好。
+ * 可透過 FAL_VIDEO_MODEL 環境變數換模型。
  */
 export async function generateVideoUrl(prompt: string): Promise<string> {
   if (!env.FAL_API_KEY) throw new Error("FAL_API_KEY not configured");
@@ -298,10 +315,14 @@ export async function generateVideoUrl(prompt: string): Promise<string> {
 }
 
 /**
- * Submit a job to fal.ai queue, poll until done, return the result payload.
+ * 通用 fal.ai queue API 包裝:submit → poll status → fetch result。
  *
- * The fal queue API: POST `/{model}` (returns request_id) → GET `/{model}/requests/{id}/status`
- * (poll until COMPLETED) → GET `/{model}/requests/{id}` (final result).
+ * fal.ai queue 三步流程:
+ *   1. POST  /{model}                    → 拿 request_id
+ *   2. GET   /{model}/requests/{id}/status → poll 到 status === COMPLETED
+ *   3. GET   /{model}/requests/{id}      → 拿最終結果
+ *
+ * 5 分鐘內 polling 不到 COMPLETED 會 throw timeout。
  */
 async function falRunModel<T>(model: string, input: Record<string, unknown>): Promise<T> {
   const headers = {
@@ -343,6 +364,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * 回報目前 .env 設定下,cloud mode 各功能是否就緒。
+ * 給前端 modal 判斷哪些選項可以打勾、哪個 API 在跑。
+ */
 export function cloudProviderStatus(): {
   chat: boolean;
   voice: boolean;

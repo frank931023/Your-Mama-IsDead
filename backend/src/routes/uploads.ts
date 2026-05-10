@@ -1,3 +1,13 @@
+/**
+ * 檔案上傳路由 (中繼 + 預簽名兩種策略)
+ *
+ * 兩種上傳模式:
+ *   1. presign:Pinata V3 提供短時效簽名 JWT,瀏覽器直接 PUT 上去 (快)
+ *   2. relay:後端代為釘到 IPFS (穩,但流量過後端)
+ *
+ * presign 失敗 (帳號太舊 / endpoint 變動) 會自動 fallback 到 relay。
+ * Frontend 預設用 relay (POST /api/uploads/relay),簡單可靠。
+ */
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";

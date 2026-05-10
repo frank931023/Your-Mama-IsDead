@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * 數位分身啟動模式選擇 Modal
+ *
+ * 使用者按下「啟動數位分身互動」會彈出這個 Modal,提供兩種啟動方式:
+ *   1. 親身打造 (本地離線訓練)        — 目前 disabled,待離線 pipeline 完工
+ *   2. 雲端即時喚起 (cloud API)       — 主路徑,直接打 OpenAI/Anthropic 等
+ *
+ * 開啟時會 GET /api/personas/cloud-status 詢問 backend,根據哪些 .env
+ * key 已設定來決定卡片是否可點擊與顯示哪個 provider 的徽章。
+ */
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Cpu, Cloud, X, AlertCircle } from "lucide-react";

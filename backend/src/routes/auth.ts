@@ -1,3 +1,12 @@
+/**
+ * SIWE 驗證 HTTP 路由
+ *
+ * 兩個端點都掛在 /api/auth 底下:
+ *   GET  /api/auth/nonce?address=0x...    取得待簽名的 nonce
+ *   POST /api/auth/verify { message, signature }  驗證並換 JWT
+ *
+ * 真正的密碼學驗證 + nonce 一次性檢查放在 ../auth/siwe.ts。
+ */
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { isAddress } from "viem";
@@ -16,6 +25,7 @@ const VerifyBody = z.object({
 });
 
 export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  // GET /api/auth/nonce — 給定錢包地址,簽發一個 10 分鐘有效的隨機 nonce
   app.get("/nonce", async (request, reply) => {
     const parsed = NonceQuery.safeParse(request.query);
     if (!parsed.success) {
@@ -29,6 +39,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     });
   });
 
+  // POST /api/auth/verify — 驗證 SIWE 訊息 + 簽名,通過則簽發 JWT
   app.post("/verify", async (request, reply) => {
     const parsed = VerifyBody.safeParse(request.body);
     if (!parsed.success) {
