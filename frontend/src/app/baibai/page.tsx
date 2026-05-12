@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/Button";
 import { useError } from "@/components/ErrorDialog";
 import { getRegistry, type TabletRecord } from "@/lib/api";
 import { displayName, formatDate, ipfsToHttps, shortName } from "@/lib/utils";
-import { MemorialHall } from "@/components/baibai/MemorialHall";
+import { PilgrimageHall } from "@/components/baibai/PilgrimageHall";
 
 export default function BaiBaiPage(): React.ReactElement {
   const { showError } = useError();
@@ -51,7 +51,7 @@ export default function BaiBaiPage(): React.ReactElement {
   }, [showError]);
 
   if (chosen) {
-    return <MemorialHall tablet={chosen} onExit={() => setChosen(null)} />;
+    return <PilgrimageHall tablet={chosen} onExit={() => setChosen(null)} />;
   }
 
   return (

@@ -33,9 +33,11 @@ import { generateKeepsake, downloadBlob } from "./keepsake";
 interface MemorialHallProps {
   tablet: TabletRecord;
   onExit: () => void;
+  /** 朝聖式體驗模式時為 true,會在祭壇旁多出「小靜」家屬 NPC */
+  showXiaojing?: boolean;
 }
 
-export function MemorialHall({ tablet, onExit }: MemorialHallProps): React.ReactElement {
+export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialHallProps): React.ReactElement {
   const router = useRouter();
   const { showError } = useError();
   const meta = tablet.metadata;
@@ -330,6 +332,7 @@ export function MemorialHall({ tablet, onExit }: MemorialHallProps): React.React
         <Hall />
         <Altar incenseLit={incenseLit} />
         <Guide name={shortName(meta, tablet.tokenId)} />
+        {showXiaojing ? <Xiaojing /> : null}
         {portraitUrl ? (
           <PortraitFrame src={portraitUrl} name={shortName(meta, tablet.tokenId)} />
         ) : (
@@ -885,6 +888,71 @@ function Guide({ name }: { name: string }): React.ReactElement | null {
         <Html position={[0, 2.4, 0]} center distanceFactor={6} style={{ pointerEvents: "none" }}>
           <div className="whitespace-nowrap rounded-lg border border-paper/30 bg-black/70 px-4 py-2 text-sm text-paper backdrop-blur-sm">
             請靜下心,{name} 一直在等您。
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+// ─── 小靜 NPC (家屬) ───────────────────────────────────────────────────
+
+/**
+ * 小靜:逝者家屬,站在祭壇右側偏前。
+ * 進場 6 秒後輕聲說「謝謝你趕過來,他一直等著你。」,停留 7 秒後淡出。
+ * 比阿福引導員更靠近祭壇,膚色帶溫暖橘調,跟阿福(冷金)做區隔。
+ */
+function Xiaojing(): React.ReactElement | null {
+  const [phase, setPhase] = React.useState<"hidden" | "appearing" | "visible" | "fading">("hidden");
+  const groupRef = React.useRef<THREE.Group | null>(null);
+
+  React.useEffect(() => {
+    const t1 = window.setTimeout(() => setPhase("appearing"), 6000);
+    const t2 = window.setTimeout(() => setPhase("visible"), 7000);
+    const t3 = window.setTimeout(() => setPhase("fading"), 14000);
+    const t4 = window.setTimeout(() => setPhase("hidden"), 15500);
+    return () => {
+      [t1, t2, t3, t4].forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
+
+  const opacity =
+    phase === "hidden" ? 0 : phase === "appearing" ? 0.3 : phase === "visible" ? 0.6 : 0.15;
+
+  useFrame((state) => {
+    if (!groupRef.current) return;
+    groupRef.current.position.y = 0 + Math.sin(state.clock.elapsedTime * 0.6) * 0.04;
+  });
+
+  if (phase === "hidden") return null;
+
+  return (
+    <group ref={groupRef} position={[2.8, 0, 1.8]}>
+      <mesh position={[0, 0.85, 0]}>
+        <capsuleGeometry args={[0.22, 0.9, 8, 16]} />
+        <meshStandardMaterial
+          color="#e8b89a"
+          emissive="#a8765a"
+          emissiveIntensity={0.5}
+          transparent
+          opacity={opacity}
+        />
+      </mesh>
+      <mesh position={[0, 1.6, 0]}>
+        <sphereGeometry args={[0.16, 16, 16]} />
+        <meshStandardMaterial
+          color="#f5d8b8"
+          emissive="#d4a878"
+          emissiveIntensity={0.7}
+          transparent
+          opacity={opacity}
+        />
+      </mesh>
+      {(phase === "visible" || phase === "appearing") && (
+        <Html position={[0, 2.2, 0]} center distanceFactor={6} style={{ pointerEvents: "none" }}>
+          <div className="whitespace-nowrap rounded-lg border border-paper/30 bg-black/75 px-4 py-2 text-sm text-paper backdrop-blur-sm">
+            <p className="text-[10px] uppercase tracking-wider" style={{ color: "#e8b89a" }}>家屬・小靜</p>
+            <p>謝謝你趕過來,他一直等著你。</p>
           </div>
         </Html>
       )}
