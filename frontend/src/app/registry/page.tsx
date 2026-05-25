@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 塔位總覽頁 (/registry)
+ * 燈塔總覽頁 (/registry)
  *
  * 列出 backend DB 已知的所有塔位,提供兩種視圖:
  *   - bento (預設) 卡片格,3~4 欄,適合瀏覽
@@ -59,7 +59,7 @@ export default function RegistryPage(): React.ReactElement {
       const rs = await getRegistry();
       setItems(rs);
     } catch (e) {
-      showError("讀取塔位列表失敗", e instanceof Error ? e.message : String(e));
+      showError("讀取燈塔列表失敗", e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -86,9 +86,9 @@ export default function RegistryPage(): React.ReactElement {
     <div className="container-page py-10">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="font-serif text-3xl text-ink">塔位總覽</h1>
+          <h1 className="font-serif text-3xl text-ink">燈塔總覽</h1>
           <p className="text-sm text-ink-muted">
-            這座記憶燈塔已點亮的所有名字。每一張塔位都對應一段被永久封存的故事。
+            這座記憶燈塔已點亮的所有名字。每一張燈塔都對應一段被永久封存的故事。
           </p>
           {CONTRACT_ADDRESS && CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000" ? (
             <p className="mt-1 text-xs text-ink-muted">
@@ -133,7 +133,7 @@ export default function RegistryPage(): React.ReactElement {
       ) : !items || items.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-ink-muted">
-            <p>目前還沒有任何塔位被點亮。</p>
+            <p>目前還沒有任何燈塔被點亮。</p>
             <p>剛鑄造完?點上方「掃描鏈上新鑄造」把鏈上資料拉進來。</p>
           </CardContent>
         </Card>
