@@ -1,14 +1,15 @@
 "use client";
 
 /**
- * 我的塔位 (/dashboard)
+ * 燈塔典藏 (/dashboard)
  *
- * 列出當前連線錢包持有的所有塔位 NFT。
+ * 列出當前連線錢包持有的所有記憶燈塔。
  *
  * 注意:這頁只查 DB(走 GET /api/tablets?owner=0x...),不會主動 sync 鏈上。
- * 如果剛 mint 但這頁看不到新塔位,代表 backend 還沒 sync,
- * 可以去 /registry 點「掃描鏈上新鑄造」或進該塔位詳情頁觸發 lazy sync。
+ * 如果剛建立燈塔但這頁看不到新資料,代表 backend 尚未同步,
+ * 可前往 /registry 點選「掃描鏈上資料」或進入燈塔頁面觸發 lazy sync。
  */
+
 import * as React from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
@@ -26,16 +27,21 @@ export default function DashboardPage(): React.ReactElement {
     <div className="container-page py-10">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-serif text-3xl text-ink">我的塔位</h1>
-          <p className="text-sm text-ink-muted">列出此錢包持有的所有 DSAS 塔位 NFT。</p>
+          <h1 className="font-serif text-3xl text-ink">燈塔典藏</h1>
+
+          <p className="text-sm text-ink-muted">
+            列出此錢包持有的所有 Aeterlux 記憶燈塔。
+          </p>
         </div>
+
         <Link href="/mint">
           <Button>
             <Plus className="h-4 w-4" aria-hidden />
-            鑄造新塔位
+            建立新燈塔
           </Button>
         </Link>
       </header>
+
       <ChainGuard>
         <DashboardList />
       </ChainGuard>
@@ -45,25 +51,35 @@ export default function DashboardPage(): React.ReactElement {
 
 function DashboardList(): React.ReactElement {
   const { address } = useAccount();
+
   const { showError } = useError();
+
   const [items, setItems] = React.useState<TabletRecord[] | null>(null);
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
     if (!address) return;
+
     let cancelled = false;
+
     setLoading(true);
+
     getOwned(address)
       .then((rs) => {
         if (!cancelled) setItems(rs);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        showError("讀取我的塔位失敗", e instanceof Error ? e.message : String(e));
+
+        showError(
+          "讀取燈塔資料失敗",
+          e instanceof Error ? e.message : String(e),
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
     };
@@ -72,6 +88,7 @@ function DashboardList(): React.ReactElement {
   if (!address) {
     return <p className="text-sm text-ink-muted">請先連接錢包。</p>;
   }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -79,15 +96,19 @@ function DashboardList(): React.ReactElement {
       </div>
     );
   }
+
   if (!items || items.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
           <p className="text-sm text-ink-muted">
-            尚未持有塔位。前往「鑄造」開始為一段生命建立永不熄滅的燈塔。
+            尚未建立任何燈塔。
+            <br />
+            為重要的人留下一道能被長久保存的光。
           </p>
+
           <Link href="/mint">
-            <Button>立即鑄造</Button>
+            <Button>建立第一座燈塔</Button>
           </Link>
         </CardContent>
       </Card>
@@ -105,14 +126,17 @@ function DashboardList(): React.ReactElement {
 
 function TabletCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
   const meta = tablet.metadata;
+
   const portrait = meta?.image ? ipfsToHttps(meta.image) : null;
+
   const death = meta?.dsas.deceased.death?.date;
   const birth = meta?.dsas.deceased.birth?.date;
+
   const status: TrainingStatus = inferTrainingStatus(tablet);
 
   return (
     <Link href={`/tablet/${tablet.tokenId}`}>
-      <Card className="flex h-full flex-col transition-shadow hover:shadow-ritual hover:border-gold/50">
+      <Card className="flex h-full flex-col transition-shadow hover:border-gold/50 hover:shadow-ritual">
         <CardHeader className="flex flex-col gap-2">
           {portrait ? (
             <img
@@ -125,19 +149,28 @@ function TabletCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
               無圖
             </div>
           )}
+
           <div>
             <CardTitle>{displayName(meta, tablet.tokenId)}</CardTitle>
-            <p className="text-xs text-ink-muted">第 {tablet.tokenId} 號塔位</p>
+
+            <p className="text-xs text-ink-muted">
+              第 {tablet.tokenId} 座燈塔
+            </p>
           </div>
         </CardHeader>
+
         <CardContent className="flex flex-1 flex-col gap-2">
           <p className="text-xs text-ink-muted">
             {formatDate(birth) || "?"} – {formatDate(death) || "?"}
           </p>
+
           <p className="text-xs text-ink-muted">
             家人:{truncateAddress(tablet.owner)}
           </p>
-          <span className={`mt-auto inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[status]}`}>
+
+          <span
+            className={`mt-auto inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[status]}`}
+          >
             {STATUS_LABEL[status]}
           </span>
         </CardContent>
@@ -164,5 +197,6 @@ const STATUS_STYLE: Record<TrainingStatus, string> = {
 
 function inferTrainingStatus(t: TabletRecord): TrainingStatus {
   if (t.artifactURI) return "ready";
+
   return "untrained";
 }
