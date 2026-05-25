@@ -96,7 +96,7 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        showError("讀取塔位失敗", e instanceof Error ? e.message : String(e));
+        showError("讀取燈塔失敗", e instanceof Error ? e.message : String(e));
       });
     return () => {
       cancelled = true;
