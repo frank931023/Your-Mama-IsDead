@@ -16,9 +16,9 @@ import { Providers } from "./providers";
 import { WalletConnect } from "@/components/WalletConnect";
 
 export const metadata: Metadata = {
-  title: "DSAS · 數位塔位",
+  title: "Aeterlux · 數位記憶燈塔",
   description:
-    "主權數位先祖系統 · Decentralized Sovereign Ancestor System — 透過區塊鏈、永久儲存與生成式 AI,為每個家族建立永不熄滅的記憶燈塔。",
+    "數位記憶燈塔 · Digital Memory Lighthouse — 透過區塊鏈、永久儲存與生成式 AI,為每段生命留下永不熄滅的光。",
 };
 
 export default function RootLayout({
@@ -44,17 +44,17 @@ function SiteHeader(): React.ReactElement {
     <header className="border-b border-ink/10 bg-paper/85 backdrop-blur-sm">
       <div className="container-page flex h-16 items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2">
-          <span className="font-serif text-xl tracking-wide text-ink">DSAS</span>
+          <span className="font-serif text-xl tracking-wide text-ink">Aeterlux</span>
           <span className="hidden text-xs uppercase tracking-[0.3em] text-ink-muted sm:block">
-            數位塔位
+            數位記憶燈塔
           </span>
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <NavLink href="/about">關於</NavLink>
-          <NavLink href="/mint">鑄造</NavLink>
-          <NavLink href="/dashboard">我的塔位</NavLink>
-          <NavLink href="/registry">塔位總覽</NavLink>
-          <NavLink href="/baibai">線上靈堂</NavLink>
+          <NavLink href="/mint">建立燈塔</NavLink>
+          <NavLink href="/dashboard">燈塔典藏</NavLink>
+          <NavLink href="/registry">燈塔總覽</NavLink>
+          <NavLink href="/baibai">線上紀念館</NavLink>
         </nav>
         <div className="hidden md:block">
           <WalletConnect compact />
@@ -82,7 +82,7 @@ function SiteFooter(): React.ReactElement {
   return (
     <footer className="border-t border-ink/10 bg-paper-soft/50">
       <div className="container-page flex flex-col gap-2 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
-        <p>© DSAS Prototype · Sovereign Digital Ancestor System</p>
+        <p>© Aeterlux Prototype · Sovereign Digital Ancestor System</p>
         <p>區塊鏈不可篡改性 · Arweave 永久封存 · 生成式 AI 賦予記憶生命</p>
       </div>
     </footer>
