@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * 鑄造塔位流程 (/mint)
+ * 建立記憶燈塔流程 (/mint)
  *
  * 五步驟向導:
  *   0. 基本資料         姓名/籍貫/生卒/生平
  *   1. 上傳素材         大頭照(必填) + 照片/影音/文字/對話紀錄
- *   2. 陽世子孫快照     metadata 內的非權威來源(權威是鏈上 ERC-6150)
+ *   2. 家族紀錄快照     metadata 內的非權威來源(權威是鏈上 ERC-6150)
  *   3. 家族脈絡 + 同意   根節點 or 子節點 + 同意聲明
- *   4. 簽名鑄造         上傳 metadata 到 IPFS → mintRoot/safeMintWithParent
+ *   4. 簽署與鑄造         上傳 metadata 到 IPFS → mintRoot/safeMintWithParent
  *
  * 草稿存 localStorage (key=DRAFT_KEY),關掉瀏覽器再開仍保留。
  * 鑄造成功後會自動清掉草稿。
@@ -43,12 +43,12 @@ import type {
 const STEPS: readonly StepperStep[] = [
   { id: "basic", label: "基本資料", description: "姓名 / 生卒 / 生平" },
   { id: "media", label: "上傳素材", description: "照片 / 影音 / 對話" },
-  { id: "descendants", label: "陽世子孫", description: "家族成員快照" },
-  { id: "lineage", label: "家族脈絡", description: "根節點 / 父節點 + 同意聲明" },
-  { id: "submit", label: "簽名鑄造", description: "上傳 metadata + 寫入鏈上" },
+  { id: "descendants", label: "家族紀錄", description: "親屬與家族關係" },
+  { id: "lineage", label: "家族脈絡", description: "家族節點 / 同意聲明" },
+  { id: "submit", label: "鑄造燈塔", description: "永久保存與鏈上建立" },
 ];
 
-const DRAFT_KEY = "dsas:mint-draft:v1";
+const DRAFT_KEY = "aeterlux:lighthouse-draft:v1";
 
 interface DraftBasic {
   name: string;
@@ -114,9 +114,9 @@ export default function MintPage(): React.ReactElement {
   return (
     <div className="container-page py-10">
       <header className="mb-6 flex flex-col gap-2">
-        <h1 className="font-serif text-3xl text-ink">鑄造數位塔位</h1>
+        <h1 className="font-serif text-3xl text-ink">建立記憶燈塔</h1>
         <p className="text-sm text-ink-muted">
-          填表 → 上傳素材 → 描述家族 → 簽署同意 → 鑄造 NFT。流程草稿會自動暫存在本機。
+          填寫資料 → 上傳素材 → 建立家族紀錄 → 簽署同意 → 鏈上建立燈塔。
         </p>
       </header>
       <ChainGuard>
@@ -349,7 +349,7 @@ function BasicStep({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>逝者基本資料</CardTitle>
+        <CardTitle>生平資料</CardTitle>
         <CardDescription>標 * 為必填。日期使用 yyyy-mm-dd。</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -533,7 +533,7 @@ function DescendantsStep({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>陽世子孫(快照)</CardTitle>
+        <CardTitle>家族紀錄(快照)</CardTitle>
         <CardDescription>
           鏈上家譜的權威來源是 ERC-6150 父子關係,這裡是寫入 metadata 的可讀快照。
         </CardDescription>
@@ -719,7 +719,7 @@ function SubmitStep({
               Metadata URI:<code>{state.metadataUri}</code>
             </p>
             <Button onClick={() => onView(state.metadataUri)} variant="secondary" size="sm">
-              前往我的塔位
+              前往燈塔典藏
             </Button>
           </div>
         ) : null}
