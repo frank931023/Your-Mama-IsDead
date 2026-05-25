@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 3D 線上靈堂主場景
+ * 3D 線上紀念館主場景
  *
  * 場景元素:
  *   - 中央祖位:石牆 + 大幅肖像(從 metadata.image 載入)
@@ -171,7 +171,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           className="pointer-events-auto bg-paper/80 text-ink hover:bg-paper"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
-          離開靈堂
+          離開紀念空間
         </Button>
         <div className="pointer-events-none rounded-md bg-black/40 px-4 py-2 text-center text-paper backdrop-blur-sm">
           <p className="font-serif text-xl">{displayName(meta, tablet.tokenId)}</p>
@@ -249,7 +249,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
               ) : (
                 <Download className="h-4 w-4" aria-hidden />
               )}
-              下載祭拜紀念卡
+              下載追思紀念卡
             </Button>
             <Button
               onClick={() => router.push(`/tablet/${tablet.tokenId}/chat?mode=cloud`)}
