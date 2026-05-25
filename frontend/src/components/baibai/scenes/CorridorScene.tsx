@@ -121,7 +121,7 @@ export function CorridorScene({
           className="pointer-events-auto bg-gold/90 text-ink hover:bg-gold disabled:bg-paper/50 disabled:text-ink-muted"
         >
           <ArrowRight className="h-4 w-4" aria-hidden />
-          進入正殿靈堂
+          進入追思空間
         </Button>
       </div>
 
