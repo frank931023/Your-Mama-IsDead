@@ -42,10 +42,12 @@ export function PersonaActivationModal({ tokenId, metadata, open, onClose }: Pro
           voice: false,
           image: false,
           video: false,
+          avatar: false,
           chatProvider: null,
           voiceProvider: null,
           imageProvider: null,
           videoProvider: null,
+          avatarProvider: null,
         }),
       )
       .finally(() => setLoadingStatus(false));

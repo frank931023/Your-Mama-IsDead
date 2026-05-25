@@ -138,15 +138,35 @@ export interface CloudStatus {
   voice: boolean;
   image: boolean;
   video: boolean;
+  avatar: boolean;
   chatProvider: "anthropic" | "openai" | null;
   voiceProvider: "elevenlabs" | "openai" | null;
   imageProvider: "fal" | "openai" | null;
   videoProvider: "fal" | null;
+  avatarProvider: "simli" | null;
 }
 
 export async function getCloudStatus(): Promise<CloudStatus> {
   const res = await fetch(`${BACKEND_URL}/api/personas/cloud-status`, { cache: "no-store" });
   return handle<CloudStatus>(res);
+}
+
+export interface SimliSession {
+  sessionToken: string;
+  faceId: string;
+  maxSessionLength: number;
+  maxIdleTime: number;
+}
+
+export async function fetchSimliSession(
+  tokenId: string | number,
+  jwt: string,
+): Promise<SimliSession> {
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/simli-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(jwt) },
+  });
+  return handle<SimliSession>(res);
 }
 
 export interface Tribute {

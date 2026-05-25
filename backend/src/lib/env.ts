@@ -57,6 +57,16 @@ const EnvSchema = z.object({
   FAL_API_KEY: z.string().optional(),
   FAL_IMAGE_MODEL: z.string().default("fal-ai/flux/schnell"),
   FAL_VIDEO_MODEL: z.string().default("fal-ai/kling-video/v1.6/standard/text-to-video"),
+
+  // Simli — realtime lip-synced talking-head avatar. When SIMLI_API_KEY is set,
+  // the frontend can request a per-session compose token and render a live
+  // avatar in the chat view. The face ID is the Simli avatar identifier
+  // (created via dashboard or POST /faces/trinity); falls back to Simli's
+  // public preset face so the integration works out-of-the-box during dev.
+  SIMLI_API_KEY: z.string().optional(),
+  SIMLI_DEFAULT_FACE_ID: z.string().default("tmp9i8bbq7c"),
+  SIMLI_MAX_SESSION_SECONDS: z.coerce.number().int().positive().default(600),
+  SIMLI_MAX_IDLE_SECONDS: z.coerce.number().int().positive().default(180),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

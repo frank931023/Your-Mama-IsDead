@@ -373,10 +373,12 @@ export function cloudProviderStatus(): {
   voice: boolean;
   image: boolean;
   video: boolean;
+  avatar: boolean;
   chatProvider: "anthropic" | "openai" | null;
   voiceProvider: "elevenlabs" | "openai" | null;
   imageProvider: "fal" | "openai" | null;
   videoProvider: "fal" | null;
+  avatarProvider: "simli" | null;
 } {
   const chatProvider: "anthropic" | "openai" | null = env.ANTHROPIC_API_KEY
     ? "anthropic"
@@ -402,5 +404,7 @@ export function cloudProviderStatus(): {
           : null,
     imageProvider,
     videoProvider: env.FAL_API_KEY ? "fal" : null,
+    avatar: Boolean(env.SIMLI_API_KEY),
+    avatarProvider: env.SIMLI_API_KEY ? "simli" : null,
   };
 }

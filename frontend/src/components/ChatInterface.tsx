@@ -23,9 +23,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useError } from "@/components/ErrorDialog";
 import { ProgressBar } from "@/components/ProgressBar";
+import { SimliAvatar, type SimliAvatarHandle } from "@/components/SimliAvatar";
 import { useSiweLogin } from "@/lib/wallet";
 import { streamChat, type ChatMessage } from "@/lib/chat-stream";
-import { BACKEND_URL, fetchTablet, type TabletRecord } from "@/lib/api";
+import { BACKEND_URL, fetchTablet, getCloudStatus, type TabletRecord } from "@/lib/api";
 import { ipfsToHttps, cn, shortName } from "@/lib/utils";
 
 // 影像 / 影片生成的「合理預期等待時間」(秒)
@@ -59,8 +60,15 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
   const [latestVideo, setLatestVideo] = React.useState<string | null>(null);
   const [generatingPortrait, setGeneratingPortrait] = React.useState(false);
   const [generatingVideo, setGeneratingVideo] = React.useState(false);
+  const [avatarAvailable, setAvatarAvailable] = React.useState(false);
   const abortRef = React.useRef<AbortController | null>(null);
   const messagesScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const simliRef = React.useRef<SimliAvatarHandle | null>(null);
+
+  // Show the Simli talking-head only in cloud mode and only when the backend
+  // reports a configured SIMLI_API_KEY. Local mode keeps the static portrait
+  // because the local compute server doesn't proxy Simli sessions.
+  const useAvatar = mode === "cloud" && avatarAvailable;
 
   // 訊息更新時自動捲到底,避免使用者要手動往下滑看新回覆
   React.useEffect(() => {
@@ -100,6 +108,23 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       abortRef.current?.abort();
     };
   }, []);
+
+  // Probe cloud capability once on mount; surfaces SIMLI_API_KEY presence so we
+  // can decide whether to render <SimliAvatar> instead of the static portrait.
+  React.useEffect(() => {
+    if (mode !== "cloud") return;
+    let cancelled = false;
+    getCloudStatus()
+      .then((s) => {
+        if (!cancelled) setAvatarAvailable(s.avatar);
+      })
+      .catch(() => {
+        /* swallow — avatar simply stays disabled if status probe fails */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   /**
    * 送出訊息流程:
@@ -148,11 +173,21 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       // Auto-trigger voice on every reply. Portrait stays on-demand (button)
       // because cloud image gen is slow and costs money per call.
       void triggerVoice(tokenId, full, token, mode).then((url) => {
-        if (url) {
-          setLatestAudio(url);
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantMsg.id ? { ...m, audioUrl: url } : m)),
-          );
+        if (!url) return;
+        setLatestAudio(url);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantMsg.id ? { ...m, audioUrl: url } : m)),
+        );
+        // When the avatar is up, route TTS through Simli for lip-sync. The
+        // right-panel <audio> tag drops its autoPlay flag in that case so we
+        // don't hear the same clip twice (Simli echoes the audio back via its
+        // own <audio> element synced to the video).
+        if (useAvatar && simliRef.current) {
+          simliRef.current.playAudio(url).catch((err: unknown) => {
+            // Avatar playback errors are non-fatal — the audio tag still has
+            // the clip and the user can replay manually.
+            console.warn("Simli playAudio failed", err);
+          });
         }
       });
     } catch (e) {
@@ -251,7 +286,15 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
 
       <Panel defaultSize="25%" minSize="18%" className="flex flex-col">
       <Card className="flex h-full flex-col items-center gap-2 overflow-hidden overflow-y-auto p-4">
-        {portraitToShow ? (
+        {useAvatar && token ? (
+          <SimliAvatar
+            ref={simliRef}
+            tokenId={tokenId}
+            jwt={token}
+            posterUrl={portraitToShow}
+            className="h-64 w-full shrink-0"
+          />
+        ) : portraitToShow ? (
           <img
             src={portraitToShow}
             alt={tablet?.metadata?.name ?? `tablet #${tokenId}`}
@@ -305,13 +348,22 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       <Card className="flex h-full flex-col gap-3 overflow-hidden overflow-y-auto p-4">
         <h4 className="text-sm font-semibold text-ink">語音回應</h4>
         {latestAudio ? (
-          <audio key={latestAudio} controls autoPlay className="w-full">
+          // autoPlay only when no avatar — Simli echoes the audio in sync with
+          // the lip-sync video, so a second autoplaying <audio> would double up.
+          <audio
+            key={latestAudio}
+            controls
+            autoPlay={!useAvatar}
+            className="w-full"
+          >
             <source src={latestAudio} />
           </audio>
         ) : (
           <p className="flex items-center gap-2 text-xs text-ink-muted">
             <Volume2 className="h-4 w-4" aria-hidden />
-            送出訊息後將自動唸出回應。
+            {useAvatar
+              ? "送出訊息後分身將直接開口回應。"
+              : "送出訊息後將自動唸出回應。"}
           </p>
         )}
 

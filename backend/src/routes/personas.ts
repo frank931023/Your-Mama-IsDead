@@ -14,6 +14,7 @@ import {
   synthesizeVoice,
   type ChatTurn,
 } from "../cloud-persona.js";
+import { createComposeSessionToken, simliConfigured, SimliError } from "../lib/simli.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u),
@@ -259,6 +260,53 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const detail = describeUpstreamError(err);
         request.log.error({ err }, "cloud-portrait failed");
         return reply.code(502).send({ error: "image_provider_failed", detail });
+      }
+    },
+  );
+
+  // POST /api/personas/:tokenId/simli-session — auth + owner. Mints a Simli
+  // compose-mode session token bound to the avatar face configured for this
+  // tablet (or the default face). Returned token is short-lived and used by
+  // the browser to open the WebRTC pipe via simli-client.
+  app.post(
+    "/:tokenId/simli-session",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      if (!simliConfigured()) {
+        return reply.code(503).send({ error: "simli_not_configured" });
+      }
+
+      // Per-tablet faceId override: tablet.metadata.dsas.avatar?.simliFaceId
+      // takes precedence over the env default. Lookup is best-effort; if the
+      // tablet hasn't been synced from chain yet, fall through to default.
+      let faceId: string | undefined;
+      try {
+        const tablet = await prisma.tablet.findUnique({
+          where: { tokenId: BigInt(params.data.tokenId) },
+        });
+        const md = tablet?.metadataJson as TabletMetadata | null;
+        const candidate = (md?.dsas as { avatar?: { simliFaceId?: unknown } } | undefined)?.avatar
+          ?.simliFaceId;
+        if (typeof candidate === "string" && candidate.length > 0) faceId = candidate;
+      } catch (err) {
+        request.log.warn({ err }, "simli-session: tablet lookup failed, using default face");
+      }
+
+      try {
+        const result = await createComposeSessionToken({ faceId });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof SimliError) {
+          request.log.error({ err, upstream: err.upstream }, "simli session mint failed");
+          return reply
+            .code(err.status >= 500 ? 502 : err.status)
+            .send({ error: "simli_session_failed", detail: err.message });
+        }
+        const detail = err instanceof Error ? err.message : "simli_unknown_error";
+        request.log.error({ err }, "simli session unexpected error");
+        return reply.code(502).send({ error: "simli_session_failed", detail });
       }
     },
   );
