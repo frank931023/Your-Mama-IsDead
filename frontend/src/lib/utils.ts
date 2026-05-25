@@ -66,7 +66,7 @@ export function displayName(
   tokenId?: string | number,
 ): string {
   const name = metadata?.dsas?.deceased?.name?.trim() || metadata?.name?.trim();
-  if (!name) return tokenId !== undefined ? `第 ${tokenId} 號塔位` : "塔位";
+  if (!name) return tokenId !== undefined ? `第 ${tokenId} 號燈塔` : "燈塔";
   const gender = metadata?.dsas?.deceased?.gender;
   if (gender === "male") return `${name} 公`;
   if (gender === "female") return `${name} 女士`;
@@ -81,6 +81,6 @@ export function shortName(
   return (
     metadata?.dsas?.deceased?.name?.trim() ||
     metadata?.name?.trim() ||
-    (tokenId !== undefined ? `塔位 ${tokenId}` : "塔位")
+    (tokenId !== undefined ? `燈塔 ${tokenId}` : "燈塔")
   );
 }
