@@ -25,7 +25,7 @@ export function getDefaultChain(): Chain {
 }
 
 export const wagmiConfig = getDefaultConfig({
-  appName: "DSAS · 數位塔位",
+  appName: "Aeterlux · 數位記憶燈塔",
   projectId: PROJECT_ID || "dsas-prototype-no-walletconnect",
   chains: [sepolia, baseSepolia],
   ssr: true,
