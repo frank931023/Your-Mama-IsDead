@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * 線上靈堂 (/baibai)
+ * 線上紀念館 (/baibai)
  *
  * 兩階段體驗:
  *   1. 選擇要祭拜的逝者(從 registry 拉所有塔位列出讓使用者選)
- *   2. 進入 3D 靈堂:中央祖位掛肖像、四周漂浮著本人留下的照片、
+ *   2. 進入 線上紀念館:中央祖位掛肖像、四周漂浮著本人留下的照片、
  *      檯前線香裊裊、燭光微弱閃爍。OrbitControls 讓使用者繞著
  *      靈堂走、按「三鞠躬」會觸發鏡頭低首動畫。
  *
@@ -57,13 +57,15 @@ export default function BaiBaiPage(): React.ReactElement {
   return (
     <div className="container-page py-12">
       <header className="mx-auto mb-8 max-w-2xl text-center">
-        <p className="mb-2 text-xs uppercase tracking-[0.4em] text-gold-dark">線上靈堂</p>
+        <p className="mb-2 text-xs uppercase tracking-[0.4em] text-gold-dark">線上紀念館</p>
         <h1 className="font-serif text-3xl text-ink sm:text-4xl">
-          願您此刻安靜地坐下。
+          在這裡，重新與思念相遇
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-ink-muted">
-          選擇您想祭拜的家人,我們會為您打開一座屬於他的靈堂。
-          那裡有他的肖像、他生前留下的影子,以及您可以靜靜獻上的一炷香。
+          選擇您想追思的人，
+          我們會為您開啟一處屬於他的紀念空間。
+          <br />
+          重新看看那些被留下的聲音、影像與故事。
         </p>
       </header>
 
@@ -75,7 +77,7 @@ export default function BaiBaiPage(): React.ReactElement {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-ink-muted">
             <Wind className="h-8 w-8" aria-hidden />
-            <p>目前還沒有任何塔位被點亮。</p>
+            <p>目前還沒有任何燈塔被點亮。</p>
             <Link href="/mint" className="underline underline-offset-2 hover:text-gold-dark">
               為某個人點亮第一座燈塔
             </Link>
@@ -134,7 +136,7 @@ function SelectCard({
           <Flame className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
         </div>
       </div>
-      <p className="px-4 py-3 text-xs text-ink-muted">點此進入靈堂祭拜</p>
+      <p className="px-4 py-3 text-xs text-ink-muted">點此進入紀念空間</p>
     </button>
   );
 }
