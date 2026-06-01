@@ -16,6 +16,7 @@ import * as React from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+import { WebGLGuard } from "../WebGLGuard";
 import { ChevronLeft, Droplets } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -81,6 +82,7 @@ export function PurificationScene({
         滑鼠左鍵拖曳:環視 ・ 滾輪:縮放
       </p>
 
+      <WebGLGuard>
       <Canvas shadows camera={{ position: [0, 1.6, 4.5], fov: 50 }} gl={{ antialias: true }}>
         <color attach="background" args={["#0e1518"]} />
         <fog attach="fog" args={["#0e1518", 5, 14]} />
@@ -111,6 +113,7 @@ export function PurificationScene({
           minPolarAngle={Math.PI / 5}
         />
       </Canvas>
+      </WebGLGuard>
 
       <style jsx global>{`
         @keyframes ritual-hint-fade {

@@ -17,7 +17,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import type { Address } from "viem";
-import { Plus, Trash2, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight, Sparkles, Wand2, Check, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
@@ -29,9 +29,16 @@ import { ConsentForm } from "@/components/ConsentForm";
 import { MediaUploader } from "@/components/MediaUploader";
 import { ChatLogImporter } from "@/components/ChatLogImporter";
 import { useError } from "@/components/ErrorDialog";
-import { useMintTablet } from "@/lib/wallet";
-import { uploadRelay, type UploadedAsset } from "@/lib/api";
+import { useMintTablet, useSiweLogin } from "@/lib/wallet";
+import {
+  uploadRelay,
+  generateSimliFace,
+  getCloudStatus,
+  ApiError,
+  type UploadedAsset,
+} from "@/lib/api";
 import { buildTabletMetadata } from "@/lib/metadata-builder";
+import { ipfsToHttps } from "@/lib/utils";
 import type {
   Assets,
   ChatLogEntry,
@@ -79,6 +86,14 @@ interface DraftMedia {
   chatlogs: ChatLogEntry[];
 }
 
+interface DraftAvatar {
+  /** 用大頭照生成的 Simli 專屬 faceId;空著代表還沒生成 / 生成失敗 (聊天時用預設臉)。 */
+  simliFaceId?: string;
+  status?: string;
+  /** 記下生成時用的大頭照 uri,大頭照換掉時用來判斷要不要重生成。 */
+  sourcePortraitUri?: string;
+}
+
 interface Draft {
   basic: DraftBasic;
   media: DraftMedia;
@@ -87,6 +102,7 @@ interface Draft {
   parentTokenId: string;
   consent: Consent | null;
   generation: number;
+  avatar: DraftAvatar;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -108,6 +124,7 @@ const EMPTY_DRAFT: Draft = {
   parentTokenId: "",
   consent: null,
   generation: 0,
+  avatar: {},
 };
 
 export default function MintPage(): React.ReactElement {
@@ -176,6 +193,8 @@ function MintFlow(): React.ReactElement {
     setDraft((d) => ({ ...d, basic: { ...d.basic, ...patch } }));
   const updateMedia = (patch: Partial<DraftMedia>): void =>
     setDraft((d) => ({ ...d, media: { ...d.media, ...patch } }));
+  const updateAvatar = (patch: Partial<DraftAvatar>): void =>
+    setDraft((d) => ({ ...d, avatar: { ...d.avatar, ...patch } }));
 
   const canAdvance = (() => {
     if (step === 0) return draft.basic.name.trim().length > 0;
@@ -249,6 +268,14 @@ function MintFlow(): React.ReactElement {
         descendants: descendants.length > 0 ? descendants : undefined,
         assets,
         consent: draft.consent ?? undefined,
+        ...(draft.avatar.simliFaceId
+          ? {
+              avatar: {
+                simliFaceId: draft.avatar.simliFaceId,
+                ...(draft.avatar.status ? { status: draft.avatar.status } : {}),
+              },
+            }
+          : {}),
       });
 
       setSubmitState({ status: "uploading", message: "上傳 metadata 至 IPFS……" });
@@ -284,7 +311,14 @@ function MintFlow(): React.ReactElement {
       <Stepper steps={STEPS} current={step} />
 
       {step === 0 && <BasicStep value={draft.basic} onChange={updateBasic} />}
-      {step === 1 && <MediaStep media={draft.media} updateMedia={updateMedia} />}
+      {step === 1 && (
+        <MediaStep
+          media={draft.media}
+          updateMedia={updateMedia}
+          avatar={draft.avatar}
+          updateAvatar={updateAvatar}
+        />
+      )}
       {step === 2 && (
         <DescendantsStep
           value={draft.descendants}
@@ -429,24 +463,41 @@ function BasicStep({
 function MediaStep({
   media,
   updateMedia,
+  avatar,
+  updateAvatar,
 }: {
   media: DraftMedia;
   updateMedia: (patch: Partial<DraftMedia>) => void;
+  avatar: DraftAvatar;
+  updateAvatar: (patch: Partial<DraftAvatar>) => void;
 }): React.ReactElement {
+  const portraitUri = media.portrait[0]?.uri;
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle>大頭照(必須一張)</CardTitle>
-          <CardDescription>用於 ERC-721 metadata 的 image 欄位。</CardDescription>
+          <CardDescription>用於 ERC-721 metadata 的 image 欄位,也用來生成可對話的數位分身。</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           <MediaUploader
             label="代表照"
             single
             accept="image/*"
             value={media.portrait}
-            onChange={(portrait) => updateMedia({ portrait })}
+            onChange={(portrait) => {
+              updateMedia({ portrait });
+              // 換了大頭照就清掉舊的 faceId,讓使用者用新照片重新生成。
+              const next = portrait[0]?.uri;
+              if (next !== avatar.sourcePortraitUri) {
+                updateAvatar({ simliFaceId: undefined, status: undefined, sourcePortraitUri: undefined });
+              }
+            }}
+          />
+          <AvatarFaceGenerator
+            portraitUri={portraitUri}
+            avatar={avatar}
+            updateAvatar={updateAvatar}
           />
         </CardContent>
       </Card>
@@ -513,6 +564,164 @@ function MediaStep({
           />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * 用大頭照生成 Simli 專屬數位分身 (talking-head faceId)。
+ *
+ * 流程:
+ *   1. 確認 SIMLI_API_KEY 已設 (getCloudStatus().avatar);沒設就不顯示。
+ *   2. 把已上傳到 IPFS 的大頭照 fetch 回來成 Blob (上傳後原始 File 已不在手上)。
+ *   3. 需要時觸發一次 SIWE 登入拿 JWT,POST /api/simli/face 生成 faceId。
+ *   4. faceId 存進 draft.avatar,隨 metadata 一起上鏈;聊天頁開 session 時用它。
+ *
+ * 生成失敗 (例如 Simli 配額滿且無臉可刪) 不阻斷 mint —— 只是聊天時 fallback
+ * 到預設臉 (Tina)。所以這一步是「選配增強」,不是必填。
+ */
+function AvatarFaceGenerator({
+  portraitUri,
+  avatar,
+  updateAvatar,
+}: {
+  portraitUri: string | undefined;
+  avatar: DraftAvatar;
+  updateAvatar: (patch: Partial<DraftAvatar>) => void;
+}): React.ReactElement | null {
+  const { login, logout, token } = useSiweLogin(); // global token (mint 階段還沒有 tokenId)
+  const [available, setAvailable] = React.useState<boolean | null>(null);
+  const [state, setState] = React.useState<
+    | { status: "idle" }
+    | { status: "working"; message: string }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
+
+  // 後端有沒有設 SIMLI_API_KEY?沒設就整塊不顯示 (避免給使用者一個按了會壞的按鈕)。
+  React.useEffect(() => {
+    let cancelled = false;
+    getCloudStatus()
+      .then((s) => {
+        if (!cancelled) setAvailable(s.avatar);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (available === false) return null; // Simli 未設定,靜默隱藏
+
+  const generated = Boolean(avatar.simliFaceId) && avatar.sourcePortraitUri === portraitUri;
+
+  const generate = async (): Promise<void> => {
+    if (!portraitUri) return;
+    try {
+      setState({ status: "working", message: "讀取大頭照……" });
+      const res = await fetch(ipfsToHttps(portraitUri));
+      if (!res.ok) throw new Error(`無法讀取大頭照 (${res.status})`);
+      const blob = await res.blob();
+
+      // Obtain a JWT and call the backend. The cached `token` may be a STALE
+      // string (JWT TTL is ~1h) — `token ?? login()` can't tell a valid token
+      // from an expired one, so it would happily send the dead token and get a
+      // 401 *without ever prompting a re-sign*. So: try the cached token first,
+      // and on 401 drop it, force a fresh SIWE login, and retry once.
+      const callWith = async (jwt: string): Promise<Awaited<ReturnType<typeof generateSimliFace>>> => {
+        setState({ status: "working", message: "生成數位分身中……" });
+        return generateSimliFace(blob, jwt);
+      };
+
+      let face;
+      try {
+        setState({ status: "working", message: "驗證身分……" });
+        const jwt = token ?? (await login());
+        face = await callWith(jwt);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          // Stale/invalid token → clear it and sign in fresh, then retry once.
+          logout();
+          setState({ status: "working", message: "請在錢包中簽署登入……" });
+          const jwt = await login();
+          face = await callWith(jwt);
+        } else {
+          throw err;
+        }
+      }
+
+      updateAvatar({
+        simliFaceId: face.faceId,
+        status: face.status,
+        sourcePortraitUri: portraitUri,
+      });
+      setState({ status: "idle" });
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? e.status === 401
+            ? "需要簽署登入訊息才能生成 (請在錢包中確認簽名)。"
+            : `生成失敗:${e.message}`
+          : e instanceof Error
+            ? e.message
+            : "生成失敗";
+      setState({ status: "error", message: msg });
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-gold/30 bg-gold/5 p-4">
+      <div className="flex items-start gap-3">
+        <Wand2 className="mt-0.5 h-5 w-5 shrink-0 text-gold-dark" aria-hidden />
+        <div className="flex flex-1 flex-col gap-2">
+          <div>
+            <p className="text-sm font-medium text-ink">生成可對話的數位分身(選配)</p>
+            <p className="text-xs text-ink-muted">
+              用這張大頭照生成逝者專屬的即時臉孔,日後在對話頁能看到他/她開口說話。
+              不生成也能對話,屆時會用通用形象。
+            </p>
+          </div>
+
+          {generated ? (
+            <div className="flex items-center gap-2 text-sm text-emerald-700">
+              <Check className="h-4 w-4" aria-hidden />
+              <span>已生成專屬分身。</span>
+              <button
+                type="button"
+                className="text-xs text-ink-muted underline underline-offset-2 hover:text-gold-dark"
+                onClick={() => void generate()}
+              >
+                重新生成
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!portraitUri || state.status === "working"}
+                onClick={() => void generate()}
+                className="self-start"
+              >
+                {state.status === "working" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Wand2 className="h-4 w-4" aria-hidden />
+                )}
+                {state.status === "working" ? state.message : "生成專屬分身"}
+              </Button>
+              {!portraitUri ? (
+                <p className="text-xs text-ink-muted">請先上傳一張大頭照。</p>
+              ) : null}
+              {state.status === "error" ? (
+                <p className="text-xs text-red-700">{state.message}</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

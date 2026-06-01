@@ -156,6 +156,9 @@ export interface SimliSession {
   faceId: string;
   maxSessionLength: number;
   maxIdleTime: number;
+  /** ICE/TURN servers for the WebRTC peer connection (RTCIceServer-shaped).
+   *  Empty if the backend's ICE lookup failed. */
+  iceServers: RTCIceServer[];
 }
 
 export async function fetchSimliSession(
@@ -165,8 +168,84 @@ export async function fetchSimliSession(
   const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/simli-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(jwt) },
+    // Send an empty JSON object so Fastify's content-type parser doesn't reject
+    // the request with FST_ERR_CTP_EMPTY_JSON_BODY (400). This route takes no
+    // body — faceId is resolved server-side from the tablet metadata — but the
+    // Content-Type: application/json header above makes Fastify require a body.
+    body: "{}",
   });
   return handle<SimliSession>(res);
+}
+
+export interface SimliFaceGeneration {
+  faceId: string;
+  /** 生成提交當下的狀態快照 (e.g. "pending")，非權威。 */
+  status?: string;
+  /** 配額已滿時後端刪掉的最舊一張臉 (騰名額)。 */
+  evicted?: { faceId: string } | null;
+}
+
+export interface SimliFaceStatus {
+  faceId: string;
+  status: string; // "not_found" | "pending" | "processing" | "completed" | ...
+  queuePosition?: number;
+}
+
+/**
+ * 上傳逝者大頭照給 Simli 生成專屬 avatar 臉,回傳可立即使用的 faceId。
+ *
+ * 生成本身是非同步的 (Simli 文件說可能要數分鐘),但 faceId 提交當下就能拿到,
+ * 也能立刻開 session。需要 SIWE 登入態 (避免匿名消耗 Simli 配額)。
+ *
+ * 失敗 (例如配額滿且無臉可刪) 會 throw ApiError,呼叫方可降級到預設臉。
+ */
+export async function generateSimliFace(
+  image: File | Blob,
+  jwt: string,
+): Promise<SimliFaceGeneration> {
+  const form = new FormData();
+  const name = image instanceof File ? image.name : "portrait.jpg";
+  form.append("image", image, name);
+  const res = await fetch(`${BACKEND_URL}/api/simli/face`, {
+    method: "POST",
+    headers: authHeaders(jwt), // 不要手動設 Content-Type,讓瀏覽器帶上 multipart boundary
+    body: form,
+  });
+  return handle<SimliFaceGeneration>(res);
+}
+
+/**
+ * 麥克風語音轉文字 (STT)。把錄好的音訊 blob 丟給後端 → OpenAI Whisper,
+ * 回傳辨識文字。供麥克風對話模式用,辨識結果接著走既有 chat 流程。
+ */
+export async function transcribeAudio(
+  tokenId: string | number,
+  audio: Blob,
+  jwt: string,
+): Promise<string> {
+  const form = new FormData();
+  // 給個帶副檔名的檔名,Whisper 靠它判斷格式;MediaRecorder 多輸出 webm。
+  const ext = audio.type.includes("ogg") ? "ogg" : audio.type.includes("mp4") ? "mp4" : "webm";
+  form.append("audio", audio, `speech.${ext}`);
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/cloud-stt`, {
+    method: "POST",
+    headers: authHeaders(jwt), // 不要手動設 Content-Type,讓瀏覽器帶 multipart boundary
+    body: form,
+  });
+  const { text } = await handle<{ text: string }>(res);
+  return text;
+}
+
+/** 查 faceId 生成進度。 */
+export async function getSimliFaceStatus(
+  faceId: string,
+  jwt: string,
+): Promise<SimliFaceStatus> {
+  const res = await fetch(
+    `${BACKEND_URL}/api/simli/face/${encodeURIComponent(faceId)}/status`,
+    { headers: authHeaders(jwt), cache: "no-store" },
+  );
+  return handle<SimliFaceStatus>(res);
 }
 
 export interface Tribute {

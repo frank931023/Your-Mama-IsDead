@@ -16,8 +16,7 @@
  * 短片 / 重生肖像則為手動按鈕觸發 (因為 fal.ai 一次要付 $0.25)。
  */
 import * as React from "react";
-import { Send, Loader2, AlertCircle, Volume2, Film, GripVertical } from "lucide-react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Send, Loader2, AlertCircle, Mic, Square, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -26,14 +25,14 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { SimliAvatar, type SimliAvatarHandle } from "@/components/SimliAvatar";
 import { useSiweLogin } from "@/lib/wallet";
 import { streamChat, type ChatMessage } from "@/lib/chat-stream";
-import { BACKEND_URL, fetchTablet, getCloudStatus, type TabletRecord } from "@/lib/api";
+import {
+  BACKEND_URL,
+  fetchTablet,
+  getCloudStatus,
+  transcribeAudio,
+  type TabletRecord,
+} from "@/lib/api";
 import { ipfsToHttps, cn, shortName } from "@/lib/utils";
-
-// 影像 / 影片生成的「合理預期等待時間」(秒)
-// fal.ai FLUX schnell ~6s,gpt-image-1 ~15s → 取 12s 居中
-// fal.ai Kling v1.6 standard 5s clip ~60s,Hailuo 略長 → 取 60s
-const PORTRAIT_ETA_SECONDS = 12;
-const VIDEO_ETA_SECONDS = 60;
 
 interface ChatInterfaceProps {
   tokenId: string;
@@ -50,20 +49,43 @@ interface UiMessage extends ChatMessage {
 
 export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): React.ReactElement {
   const { showError } = useError();
-  const { login, isLoggingIn, token, error: loginError } = useSiweLogin(tokenId);
+  const { login, logout, isLoggingIn, token, error: loginError } = useSiweLogin(tokenId);
   const [tablet, setTablet] = React.useState<TabletRecord | null>(null);
   const [messages, setMessages] = React.useState<UiMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [sending, setSending] = React.useState(false);
-  const [latestPortrait, setLatestPortrait] = React.useState<string | null>(null);
+  // AI-regenerated portrait used as the avatar/poster fallback (kept; the
+  // explicit "regenerate portrait" button was removed in the avatar redesign).
+  const [latestPortrait] = React.useState<string | null>(null);
   const [latestAudio, setLatestAudio] = React.useState<string | null>(null);
-  const [latestVideo, setLatestVideo] = React.useState<string | null>(null);
-  const [generatingPortrait, setGeneratingPortrait] = React.useState(false);
-  const [generatingVideo, setGeneratingVideo] = React.useState(false);
   const [avatarAvailable, setAvatarAvailable] = React.useState(false);
   const abortRef = React.useRef<AbortController | null>(null);
   const messagesScrollRef = React.useRef<HTMLDivElement | null>(null);
   const simliRef = React.useRef<SimliAvatarHandle | null>(null);
+  // Guard so a 401 from the avatar session only triggers ONE re-login attempt —
+  // if the fresh token is also rejected we stop, instead of looping forever.
+  const avatarReauthedRef = React.useRef(false);
+
+  // Mic / voice conversation mode. When true the UI goes full-screen avatar and
+  // the user talks instead of typing (mic → Whisper STT → same chat pipeline).
+  const [voiceMode, setVoiceMode] = React.useState(false);
+  // Recording state machine: idle → recording → transcribing (STT) → back to idle.
+  const [recState, setRecState] = React.useState<"idle" | "recording" | "transcribing">("idle");
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const recChunksRef = React.useRef<Blob[]>([]);
+  const recStreamRef = React.useRef<MediaStream | null>(null);
+
+  // Handle a stale-JWT 401 from <SimliAvatar>: clear the cached token and
+  // re-run SIWE once. The new token flows back in via the `token` prop, which
+  // re-mounts SimliAvatar with a valid jwt.
+  const handleAvatarAuthError = React.useCallback(() => {
+    if (avatarReauthedRef.current) return; // already retried once — give up
+    avatarReauthedRef.current = true;
+    logout();
+    login().catch(() => {
+      /* surfaced via loginError */
+    });
+  }, [login, logout]);
 
   // Show the Simli talking-head only in cloud mode and only when the backend
   // reports a configured SIMLI_API_KEY. Local mode keeps the static portrait
@@ -133,11 +155,21 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
    *   3. 串流結束後並行觸發 voice TTS (短片不自動,需手動點按鈕)
    *   4. 任一步出錯 → 抽掉 placeholder + 彈 ErrorDialog
    */
-  const send = async (): Promise<void> => {
-    const text = input.trim();
+  // Core send path, parameterised by text so BOTH the typed input and the
+  // mic-mode transcript funnel through the exact same chat → voice → Simli
+  // pipeline. `send()` (form submit) wraps this with the input box value.
+  const sendText = async (rawText: string): Promise<void> => {
+    const text = rawText.trim();
     if (!text || !token || sending) return;
     setSending(true);
-    setInput("");
+
+    // Unlock audio NOW, synchronously, while we still have the user-gesture
+    // grant from the click/submit that triggered send(). Browsers only honour
+    // AudioContext.resume() + media-playback unlock inside the gesture's sync
+    // stack; once we `await streamChat` below the grant is gone, so the Simli
+    // lip-sync audio pipeline would stay suspended (avatar renders but never
+    // moves). No-op when the avatar isn't mounted.
+    if (useAvatar) simliRef.current?.unlockAudio();
 
     const userMsg: UiMessage = {
       id: `u-${Date.now()}`,
@@ -200,6 +232,77 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     }
   };
 
+  // Form-submit wrapper: send what's in the input box, then clear it.
+  const send = async (): Promise<void> => {
+    const text = input.trim();
+    if (!text) return;
+    setInput("");
+    await sendText(text);
+  };
+
+  // ── Mic recording ────────────────────────────────────────────────────────
+  // Start capturing the mic. Unlock the avatar audio pipeline here too — this
+  // click is a user gesture, so the Simli playback gets ungated for the reply.
+  const startRecording = async (): Promise<void> => {
+    if (recState !== "idle" || sending) return;
+    try {
+      if (useAvatar) simliRef.current?.unlockAudio();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recStreamRef.current = stream;
+      recChunksRef.current = [];
+      const mr = new MediaRecorder(stream);
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) recChunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        // Release the mic immediately so the browser indicator turns off.
+        recStreamRef.current?.getTracks().forEach((t) => t.stop());
+        recStreamRef.current = null;
+        const blob = new Blob(recChunksRef.current, {
+          type: mr.mimeType || "audio/webm",
+        });
+        void transcribeAndSend(blob);
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setRecState("recording");
+    } catch (e) {
+      showError("無法使用麥克風", e instanceof Error ? e.message : "請允許瀏覽器存取麥克風");
+      setRecState("idle");
+    }
+  };
+
+  // Stop recording → MediaRecorder.onstop fires → transcribeAndSend().
+  const stopRecording = (): void => {
+    if (recState !== "recording") return;
+    mediaRecorderRef.current?.stop();
+    setRecState("transcribing");
+  };
+
+  // STT the recorded blob, then push the transcript through the normal chat
+  // pipeline (same as typing). Empty transcript (silence) is a no-op.
+  const transcribeAndSend = async (blob: Blob): Promise<void> => {
+    if (!token) {
+      setRecState("idle");
+      return;
+    }
+    try {
+      const text = await transcribeAudio(tokenId, blob, token);
+      setRecState("idle");
+      if (text.trim()) await sendText(text);
+    } catch (e) {
+      setRecState("idle");
+      showError("語音辨識失敗", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // Stop the mic stream if the component unmounts mid-recording.
+  React.useEffect(() => {
+    return () => {
+      recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
   if (loginError) {
     return (
       <Card className="p-6 text-center">
@@ -226,15 +329,115 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
   const portraitFromMetadata = tablet?.metadata?.image ? ipfsToHttps(tablet.metadata.image) : null;
   const portraitToShow = latestPortrait ?? portraitFromMetadata;
 
-  return (
-    <Group
-      orientation="horizontal"
-      className="flex h-[70vh] w-full"
+  const personName = tablet?.metadata?.name ?? `Tablet #${tokenId}`;
+
+  // Reusable avatar element (or static portrait fallback). Rendered large in
+  // both layouts; only its sizing wrapper differs.
+  const avatarEl =
+    useAvatar && token ? (
+      <SimliAvatar
+        ref={simliRef}
+        tokenId={tokenId}
+        jwt={token}
+        posterUrl={portraitToShow}
+        className="h-full w-full"
+        onAuthError={handleAvatarAuthError}
+      />
+    ) : portraitToShow ? (
+      <img
+        src={portraitToShow}
+        alt={personName}
+        className="h-full w-full rounded-md object-cover"
+      />
+    ) : (
+      <div className="flex h-full w-full items-center justify-center rounded-md bg-paper-soft text-ink-muted">
+        尚無肖像
+      </div>
+    );
+
+  // The mode toggle button (typing ⇄ voice). Voice mode is only meaningful with
+  // a live avatar + cloud STT, so hide it when the avatar isn't available.
+  const modeToggle = useAvatar ? (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={() => setVoiceMode((v) => !v)}
     >
-      <Panel defaultSize="55%" minSize="30%" className="flex flex-col">
-      <Card className="flex h-full flex-col overflow-hidden">
+      {voiceMode ? (
+        <>
+          <MessageSquare className="h-4 w-4" aria-hidden />
+          文字模式
+        </>
+      ) : (
+        <>
+          <Mic className="h-4 w-4" aria-hidden />
+          語音模式
+        </>
+      )}
+    </Button>
+  ) : null;
+
+  // ── Voice mode: full-screen avatar + a big mic button ─────────────────────
+  if (voiceMode && useAvatar) {
+    return (
+      <div className="relative flex h-[78vh] w-full flex-col overflow-hidden rounded-lg bg-ink">
+        <div className="absolute inset-0">{avatarEl}</div>
+
+        {/* Top bar: name + back-to-typing toggle */}
+        <div className="relative z-10 flex items-center justify-between p-3">
+          <span className="rounded-md bg-ink/50 px-2 py-1 text-sm font-medium text-paper backdrop-blur">
+            {personName}
+          </span>
+          {modeToggle}
+        </div>
+
+        {/* Bottom-centred mic control + status */}
+        <div className="relative z-10 mt-auto flex flex-col items-center gap-3 p-6">
+          <p className="text-sm text-paper/80">
+            {recState === "recording"
+              ? "聆聽中……再按一次結束"
+              : recState === "transcribing"
+                ? "辨識中……"
+                : sending
+                  ? "分身回應中……"
+                  : "按下麥克風開始說話"}
+          </p>
+          <button
+            type="button"
+            disabled={recState === "transcribing" || sending}
+            onClick={() => (recState === "recording" ? stopRecording() : void startRecording())}
+            className={cn(
+              "flex h-20 w-20 items-center justify-center rounded-full shadow-lg transition-colors disabled:opacity-50",
+              recState === "recording"
+                ? "animate-pulse bg-red-600 text-white"
+                : "bg-gold text-ink hover:bg-gold-soft",
+            )}
+            aria-label={recState === "recording" ? "停止錄音" : "開始錄音"}
+          >
+            {recState === "transcribing" ? (
+              <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+            ) : recState === "recording" ? (
+              <Square className="h-8 w-8" aria-hidden />
+            ) : (
+              <Mic className="h-9 w-9" aria-hidden />
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Typing mode: left conversation (scrolls) + right large avatar ─────────
+  return (
+    <div className="flex h-[78vh] w-full gap-3">
+      {/* Left: conversation, fixed height with its own scrollbar */}
+      <Card className="flex h-full w-1/2 flex-col overflow-hidden">
+        <div className="flex items-center justify-between border-b border-ink/10 p-3">
+          <h4 className="text-sm font-semibold text-ink">{personName}</h4>
+          {modeToggle}
+        </div>
         <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4">
-          {/* tablet load errors surface via modal (useError) */}
           {messages.length === 0 ? (
             <p className="text-sm text-ink-muted">
               {`想對 ${shortName(tablet?.metadata, tokenId)} 說些什麼?說一句問候,讓記憶慢慢回應。`}
@@ -280,190 +483,13 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
           </Button>
         </form>
       </Card>
-      </Panel>
 
-      <ResizeHandle />
-
-      <Panel defaultSize="25%" minSize="18%" className="flex flex-col">
-      <Card className="flex h-full flex-col items-center gap-2 overflow-hidden overflow-y-auto p-4">
-        {useAvatar && token ? (
-          <SimliAvatar
-            ref={simliRef}
-            tokenId={tokenId}
-            jwt={token}
-            posterUrl={portraitToShow}
-            className="h-64 w-full shrink-0"
-          />
-        ) : portraitToShow ? (
-          <img
-            src={portraitToShow}
-            alt={tablet?.metadata?.name ?? `tablet #${tokenId}`}
-            className="h-64 w-full shrink-0 rounded-md object-cover"
-          />
-        ) : (
-          <div className="flex h-64 w-full shrink-0 items-center justify-center rounded-md bg-paper-soft text-ink-muted">
-            尚無肖像
-          </div>
-        )}
-        <p className="text-sm font-medium text-ink">
-          {tablet?.metadata?.name ?? `Tablet #${tokenId}`}
-        </p>
-        {mode === "cloud" && token ? (
-          <div className="flex w-full flex-col gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={generatingPortrait}
-              onClick={() => {
-                setGeneratingPortrait(true);
-                const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && !m.pending);
-                const seed = lastAssistant?.content ?? "peaceful, looking into the distance";
-                void triggerPortrait(tokenId, seed.slice(0, 400), token, mode)
-                  .then((res) => {
-                    if (res.url) setLatestPortrait(res.url);
-                    else if (res.error) showError("AI 肖像生成失敗", res.error);
-                  })
-                  .finally(() => setGeneratingPortrait(false));
-              }}
-            >
-              {generatingPortrait ? (
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-              ) : null}
-              {generatingPortrait ? "生成中…" : "AI 生成另一張肖像"}
-            </Button>
-            <ProgressBar
-              active={generatingPortrait}
-              etaSeconds={PORTRAIT_ETA_SECONDS}
-              label="AI 渲染肖像中..."
-            />
-          </div>
-        ) : null}
-      </Card>
-      </Panel>
-
-      <ResizeHandle />
-
-      <Panel defaultSize="20%" minSize="15%" className="flex flex-col">
-      <Card className="flex h-full flex-col gap-3 overflow-hidden overflow-y-auto p-4">
-        <h4 className="text-sm font-semibold text-ink">語音回應</h4>
-        {latestAudio ? (
-          // autoPlay only when no avatar — Simli echoes the audio in sync with
-          // the lip-sync video, so a second autoplaying <audio> would double up.
-          <audio
-            key={latestAudio}
-            controls
-            autoPlay={!useAvatar}
-            className="w-full"
-          >
-            <source src={latestAudio} />
-          </audio>
-        ) : (
-          <p className="flex items-center gap-2 text-xs text-ink-muted">
-            <Volume2 className="h-4 w-4" aria-hidden />
-            {useAvatar
-              ? "送出訊息後分身將直接開口回應。"
-              : "送出訊息後將自動唸出回應。"}
-          </p>
-        )}
-
-        {mode === "cloud" ? (
-          <div className="mt-2 flex flex-col gap-2 border-t border-ink/10 pt-3">
-            <h4 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-              <Film className="h-4 w-4" aria-hidden />
-              短片追憶
-            </h4>
-            {latestVideo ? (
-              <video key={latestVideo} src={latestVideo} controls className="w-full rounded-md" />
-            ) : (
-              <p className="text-xs text-ink-muted">
-                以最近一句回覆為描述,生成 5 秒紀念短片(約需 30~90 秒)。
-              </p>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={generatingVideo || !token}
-              onClick={() => {
-                setGeneratingVideo(true);
-                const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant" && !m.pending);
-                const seed =
-                  lastAssistant?.content?.slice(0, 400) ?? "a quiet, warm scene in soft afternoon light";
-                void triggerVideo(tokenId, seed, token!)
-                  .then((url) => {
-                    if (url) setLatestVideo(url);
-                    else showError("短片生成失敗", "未取得影片連結,請稍後再試。");
-                  })
-                  .catch((e: unknown) => {
-                    showError("短片生成失敗", e);
-                  })
-                  .finally(() => setGeneratingVideo(false));
-              }}
-            >
-              {generatingVideo ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Film className="h-3 w-3" aria-hidden />}
-              {generatingVideo ? "生成中…" : "生成 5 秒短片"}
-            </Button>
-            <ProgressBar
-              active={generatingVideo}
-              etaSeconds={VIDEO_ETA_SECONDS}
-              label="Kling 渲染中..."
-            />
-            {generatingVideo ? (
-              <p className="text-[10px] text-ink-muted">
-                fal.ai 排隊 + 渲染,實際時間視伺服器忙碌程度而定。
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-      </Card>
-      </Panel>
-    </Group>
-  );
-}
-
-function ResizeHandle(): React.ReactElement {
-  return (
-    <Separator className="group relative mx-1 flex w-2 cursor-col-resize items-center justify-center select-none">
-      <div className="h-full w-px bg-ink/10 transition-colors group-hover:bg-gold/60" />
-      <div className="absolute flex h-8 w-4 items-center justify-center rounded bg-paper-soft opacity-0 transition-opacity group-hover:opacity-100">
-        <GripVertical className="h-3 w-3 text-ink-muted" aria-hidden />
+      {/* Right: large avatar filling the half */}
+      <div className="flex h-full w-1/2 items-stretch overflow-hidden rounded-lg bg-ink">
+        {avatarEl}
       </div>
-    </Separator>
+    </div>
   );
-}
-
-async function triggerPortrait(
-  tokenId: string,
-  prompt: string,
-  jwt: string,
-  mode: "local" | "cloud",
-): Promise<{ url: string | null; error?: string }> {
-  const path = mode === "cloud" ? "cloud-portrait" : "portrait";
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` },
-      body: JSON.stringify({ prompt }),
-    });
-    if (!res.ok) {
-      try {
-        const data = (await res.json()) as { detail?: string; error?: string };
-        return { url: null, error: data.detail ?? data.error ?? `生成失敗 (${res.status})` };
-      } catch {
-        return { url: null, error: `生成失敗 (${res.status})` };
-      }
-    }
-    if (mode === "cloud") {
-      const data = (await res.json()) as { url?: string };
-      return { url: data.url ?? null };
-    }
-    // Local mode: compute returns image/png bytes — wrap in object URL.
-    const blob = await res.blob();
-    return { url: URL.createObjectURL(blob) };
-  } catch (e) {
-    return { url: null, error: e instanceof Error ? e.message : "網路錯誤" };
-  }
 }
 
 async function triggerVoice(
@@ -486,28 +512,4 @@ async function triggerVoice(
   } catch {
     return null;
   }
-}
-
-async function triggerVideo(
-  tokenId: string,
-  prompt: string,
-  jwt: string,
-): Promise<string | null> {
-  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/cloud-video`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` },
-    body: JSON.stringify({ prompt }),
-  });
-  if (!res.ok) {
-    let msg = `Upstream ${res.status}`;
-    try {
-      const data = (await res.json()) as { detail?: string; error?: string };
-      msg = data.detail ?? data.error ?? msg;
-    } catch {
-      /* keep fallback */
-    }
-    throw new Error(msg);
-  }
-  const data = (await res.json()) as { url?: string };
-  return data.url ?? null;
 }

@@ -23,6 +23,7 @@ import { tabletRoutes } from "./routes/tablets.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { personaRoutes } from "./routes/personas.js";
+import { simliRoutes } from "./routes/simli.js";
 import { tributeRoutes } from "./routes/tributes.js";
 import { startTrainingWorker } from "./queue/training.js";
 
@@ -76,6 +77,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(uploadRoutes, { prefix: "/api/uploads" });   // 檔案中繼上傳到 IPFS
   await app.register(jobRoutes, { prefix: "/api/jobs" });         // 訓練 job 排程與回報
   await app.register(personaRoutes, { prefix: "/api/personas" }); // 對話/語音/影像/短片
+  await app.register(simliRoutes, { prefix: "/api/simli" });      // 上傳照片生成專屬 avatar 臉
   await app.register(tributeRoutes, { prefix: "/api/tributes" }); // 線上靈堂留言板
 
   return app;

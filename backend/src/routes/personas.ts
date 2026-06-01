@@ -12,6 +12,7 @@ import {
   generateVideoUrl,
   streamPersonaChat,
   synthesizeVoice,
+  transcribeAudio,
   type ChatTurn,
 } from "../cloud-persona.js";
 import { createComposeSessionToken, simliConfigured, SimliError } from "../lib/simli.js";
@@ -229,6 +230,33 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const detail = err instanceof Error ? err.message : "voice_provider_failed";
         request.log.error({ err }, "cloud-voice failed");
         return reply.code(502).send({ error: "voice_provider_failed", detail });
+      }
+    },
+  );
+
+  // POST /api/personas/:tokenId/cloud-stt — auth + owner. multipart/form-data
+  // with a single `audio` field (the user's mic recording). Returns
+  // { text } — the transcript, fed back into the chat flow client-side.
+  app.post(
+    "/:tokenId/cloud-stt",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      if (!request.isMultipart()) {
+        return reply.code(400).send({ error: "expected_multipart" });
+      }
+      const filePart = await request.file();
+      if (!filePart) return reply.code(400).send({ error: "no_file" });
+
+      const audio = await filePart.toBuffer();
+      if (audio.length === 0) return reply.code(400).send({ error: "empty_file" });
+
+      try {
+        const text = await transcribeAudio(audio, filePart.filename || "speech.webm");
+        return reply.send({ text });
+      } catch (err) {
+        const detail = describeUpstreamError(err);
+        request.log.error({ err }, "cloud-stt failed");
+        return reply.code(502).send({ error: "stt_provider_failed", detail });
       }
     },
   );

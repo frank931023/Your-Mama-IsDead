@@ -13,8 +13,13 @@
     --color-gold-dark: 126 96 39;
   }
 
-  html,
-  body {
+  /* Only pin <html> to the viewport height. The <body> uses Tailwind's
+     `min-h-screen flex flex-col` (see layout.tsx) for the sticky-footer
+     layout: <main class="flex-1"> grows to fill, pushing the footer to the
+     bottom. A fixed `height: 100%` on <body> would cap it at one viewport
+     and break that — when page content overflows, the footer would float
+     mid-content instead of sitting at the true page bottom. */
+  html {
     height: 100%;
   }
 

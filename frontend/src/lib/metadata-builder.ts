@@ -10,6 +10,7 @@
 import type {
   Artifact,
   Assets,
+  AvatarConfig,
   Consent,
   DeceasedInfo,
   DescendantSnapshot,
@@ -33,6 +34,7 @@ export interface TabletMetadataInput {
   assets?: Assets;
   artifact?: Artifact;
   consent?: Consent;
+  avatar?: AvatarConfig;
 }
 
 const GENDER_LABEL: Record<NonNullable<DeceasedInfo["gender"]>, string> = {
@@ -92,6 +94,7 @@ export function buildTabletMetadata(input: TabletMetadataInput): TabletMetadata 
       ...(input.assets ? { assets: input.assets } : {}),
       ...(input.artifact ? { artifact: input.artifact } : {}),
       ...(input.consent ? { consent: input.consent } : {}),
+      ...(input.avatar?.simliFaceId ? { avatar: input.avatar } : {}),
     },
   };
 }

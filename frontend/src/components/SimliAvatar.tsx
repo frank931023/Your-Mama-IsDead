@@ -27,10 +27,18 @@ import * as React from "react";
 import { SimliClient } from "simli-client";
 import { Loader2, AlertCircle } from "lucide-react";
 
-import { fetchSimliSession } from "@/lib/api";
+import { fetchSimliSession, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export interface SimliAvatarHandle {
+  /** Resume the WebAudio context + the inbound LiveKit audio playback. MUST be
+   *  called synchronously from inside a user-gesture handler (e.g. the click on
+   *  "send"), because browsers only honour AudioContext.resume() / media
+   *  playback unlock within the gesture's synchronous call stack — by the time
+   *  the async TTS fetch resolves and playAudio() runs, that grace is gone and
+   *  the context stays "suspended" (so no samples flow to Simli → avatar never
+   *  lip-syncs). Safe to call repeatedly. */
+  unlockAudio(): void;
   /** Play an audio source (blob: URL, http(s):// URL, or any <audio>-compatible src)
    *  through the Simli lip-sync pipeline. Resolves when the clip finishes. */
   playAudio(src: string): Promise<void>;
@@ -46,10 +54,14 @@ interface SimliAvatarProps {
   posterUrl?: string | null;
   onReady?: () => void;
   onError?: (message: string) => void;
+  /** Called when the session request is rejected with 401 (stale/expired JWT).
+   *  The parent should clear the cached token + re-run SIWE login; passing a
+   *  fresh `jwt` prop then re-triggers the connection effect. */
+  onAuthError?: () => void;
 }
 
 export const SimliAvatar = React.forwardRef<SimliAvatarHandle, SimliAvatarProps>(
-  function SimliAvatar({ tokenId, jwt, className, posterUrl, onReady, onError }, ref) {
+  function SimliAvatar({ tokenId, jwt, className, posterUrl, onReady, onError, onAuthError }, ref) {
     const videoRef = React.useRef<HTMLVideoElement | null>(null);
     const audioRef = React.useRef<HTMLAudioElement | null>(null);
     const clientRef = React.useRef<SimliClient | null>(null);
@@ -112,7 +124,22 @@ export const SimliAvatar = React.forwardRef<SimliAvatarHandle, SimliAvatarProps>
             session.sessionToken,
             videoRef.current,
             audioRef.current,
-            null, // default iceServers
+            // ICE/TURN servers from the backend (GET /compose/ice). Still passed
+            // through for completeness; LiveKit transport (below) manages its
+            // own connection, but P2P fallback inside simli-client would need
+            // these. Fall back to null only if the list is empty.
+            session.iceServers.length > 0 ? session.iceServers : null,
+            undefined, // logLevel — keep SDK default (DEBUG)
+            // Use LiveKit transport, NOT the default "p2p". Simli's edge is an
+            // ice-lite server that only advertises a single Cloudflare relay
+            // candidate; on most networks the browser can't complete the P2P
+            // ICE handshake, so simli-client never fires its internal "start"
+            // and the 15s connection timeout trips ("CONNECTION TIMED OUT"),
+            // looping forever and tearing down the audio worklet each retry —
+            // which is why the avatar rendered but never lip-synced. LiveKit
+            // routes media through Simli's managed SFU and needs no P2P NAT
+            // traversal, so it connects reliably here.
+            "livekit",
           );
           clientRef.current = client;
 
@@ -140,6 +167,13 @@ export const SimliAvatar = React.forwardRef<SimliAvatarHandle, SimliAvatarProps>
           await client.start();
         } catch (err) {
           if (cancelled) return;
+          // 401 = the JWT we were handed is stale/expired. Ask the parent to
+          // re-authenticate (clear token + re-run SIWE); a fresh `jwt` prop
+          // re-runs this effect and reconnects. Don't show a hard error for it.
+          if (err instanceof ApiError && err.status === 401) {
+            onAuthError?.();
+            return;
+          }
           const text = err instanceof Error ? err.message : "Simli connection failed";
           setErrorMessage(text);
           setStatus("error");
@@ -166,11 +200,32 @@ export const SimliAvatar = React.forwardRef<SimliAvatarHandle, SimliAvatarProps>
           void ctx.close();
         }
       };
-    }, [tokenId, jwt, onReady, onError, teardownPlayback]);
+    }, [tokenId, jwt, onReady, onError, onAuthError, teardownPlayback]);
 
     React.useImperativeHandle(
       ref,
       (): SimliAvatarHandle => ({
+        unlockAudio(): void {
+          // (1) Resume OUR WebAudio context (the one that decodes TTS into a
+          // MediaStreamTrack for Simli). Must run inside the user gesture.
+          ensureAudioContext();
+          // (2) Unlock the inbound LiveKit playback <audio>. Simli's audio track
+          // is attached to it (LivekitTransport.track.attach), and the browser
+          // blocks autoplay until a gesture. A muted play()/pause() here, in the
+          // gesture's stack, satisfies the autoplay policy; the real audio then
+          // plays when Simli pushes the lip-synced reply.
+          const a = audioRef.current;
+          if (a) {
+            const wasMuted = a.muted;
+            a.muted = true;
+            void a.play().then(() => {
+              a.pause();
+              a.muted = wasMuted;
+            }).catch(() => {
+              a.muted = wasMuted;
+            });
+          }
+        },
         async playAudio(src: string): Promise<void> {
           const client = clientRef.current;
           if (!client) throw new Error("Simli client not ready");
@@ -185,6 +240,14 @@ export const SimliAvatar = React.forwardRef<SimliAvatarHandle, SimliAvatarProps>
           }
 
           const ctx = ensureAudioContext();
+          // Wait for the context to actually reach "running". A suspended
+          // context produces NO samples, so the MediaStreamTrack we hand Simli
+          // would be silent and the avatar would stay still (all-SILENT, no
+          // SPEAK). resume() was already kicked off in unlockAudio() during the
+          // gesture; here we just await it settling.
+          if (ctx.state === "suspended") {
+            await ctx.resume().catch(() => {});
+          }
 
           // Use a fresh hidden <audio> per utterance so MediaElementSource
           // (which is one-shot per element) doesn't throw on re-use.
@@ -205,6 +268,21 @@ export const SimliAvatar = React.forwardRef<SimliAvatarHandle, SimliAvatarProps>
           const track = destination.stream.getAudioTracks()[0];
           if (!track) throw new Error("failed to create audio track");
           client.listenToMediastreamTrack(track);
+
+          // Kick the inbound playback <audio> (where LiveKit attached Simli's
+          // lip-synced audio track) to play. We get口型 because Simli receives
+          // our audio and streams video+audio back, but the browser's autoplay
+          // policy keeps that <audio> muted until something plays it from a
+          // gesture-rooted call stack — which this is (user just hit send).
+          // Without this the avatar mouths the words silently.
+          const playback = audioRef.current;
+          if (playback) {
+            playback.muted = false;
+            playback.volume = 1;
+            void playback.play().catch(() => {
+              /* if it still blocks, unlockAudio() on next send should clear it */
+            });
+          }
 
           await new Promise<void>((resolve, reject) => {
             const cleanup = (): void => {

@@ -47,6 +47,7 @@ const EnvSchema = z.object({
   OPENAI_CHAT_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_TTS_MODEL: z.string().default("tts-1"),
   OPENAI_TTS_VOICE: z.string().default("shimmer"),
+  OPENAI_STT_MODEL: z.string().default("whisper-1"),
   OPENAI_IMAGE_MODEL: z.string().default("gpt-image-1"),
   ELEVENLABS_API_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().optional(),
@@ -62,9 +63,10 @@ const EnvSchema = z.object({
   // the frontend can request a per-session compose token and render a live
   // avatar in the chat view. The face ID is the Simli avatar identifier
   // (created via dashboard or POST /faces/trinity); falls back to Simli's
-  // public preset face so the integration works out-of-the-box during dev.
+  // public preset face "Tina" so the integration works out-of-the-box during
+  // dev and whenever a tablet has no personal faceId yet.
   SIMLI_API_KEY: z.string().optional(),
-  SIMLI_DEFAULT_FACE_ID: z.string().default("tmp9i8bbq7c"),
+  SIMLI_DEFAULT_FACE_ID: z.string().default("cace3ef7-a4c4-425d-a8cf-a5358eb0c427"),
   SIMLI_MAX_SESSION_SECONDS: z.coerce.number().int().positive().default(600),
   SIMLI_MAX_IDLE_SECONDS: z.coerce.number().int().positive().default(180),
 });

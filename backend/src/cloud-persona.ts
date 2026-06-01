@@ -19,6 +19,7 @@
  */
 
 import axios from "axios";
+import FormData from "form-data";
 import type { TabletMetadata } from "../../shared/types/tablet.js";
 import { env } from "./lib/env.js";
 
@@ -258,6 +259,36 @@ export async function synthesizeVoice(text: string): Promise<{
     },
   );
   return { audio: Buffer.from(res.data), contentType: "audio/mpeg" };
+}
+
+/**
+ * 語音轉文字 (STT)。把使用者麥克風錄下的音訊丟給 OpenAI Whisper,回傳辨識
+ * 出的文字。供麥克風對話模式用:辨識結果接著走既有的 chat → voice → Simli
+ * 唇形同步管線,跟打字輸入完全一樣。
+ *
+ * @param audio    錄音的二進位內容 (webm/ogg/mp4/wav 皆可,瀏覽器 MediaRecorder
+ *                 預設多為 audio/webm;opus)
+ * @param filename 帶副檔名的檔名,Whisper 用它判斷格式 (e.g. "speech.webm")
+ */
+export async function transcribeAudio(audio: Buffer, filename: string): Promise<string> {
+  if (!env.OPENAI_API_KEY) throw new Error("no STT provider configured (set OPENAI_API_KEY)");
+
+  const form = new FormData();
+  form.append("file", audio, { filename });
+  form.append("model", env.OPENAI_STT_MODEL);
+  // 不鎖死語言 — 讓 Whisper 自動偵測 (使用者可能中英混說)。
+
+  const res = await axios.post<{ text?: string }>(
+    `${OPENAI_BASE}/audio/transcriptions`,
+    form,
+    {
+      headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}`, ...form.getHeaders() },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 60_000,
+    },
+  );
+  return (res.data?.text ?? "").trim();
 }
 
 /**

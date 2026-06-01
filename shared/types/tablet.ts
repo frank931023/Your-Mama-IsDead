@@ -65,6 +65,23 @@ export interface Consent {
   signature?: string;
 }
 
+/**
+ * 即時數位分身 (Simli talking-head avatar) 設定。
+ *
+ * `simliFaceId` 是 mint 時用逝者大頭照向 Simli 生成的專屬 faceId
+ * (POST /faces/trinity)。寫進 metadata 後上鏈,聊天頁開 session 時
+ * 後端讀這個欄位用逝者本人的臉做唇形同步。生成失敗 / 配額不足時這個
+ * 欄位會缺省,後端會 fallback 到 SIMLI_DEFAULT_FACE_ID (通用形象)。
+ *
+ * 生成是非同步的 (可能要數分鐘),mint 當下不會等它完成,只先取得
+ * faceId。`status` 留下生成當下的狀態快照供前端參考,非權威。
+ */
+export interface AvatarConfig {
+  simliFaceId?: string;
+  /** 生成提交當下 Simli 回報的狀態 (e.g. "pending" | "completed")，僅供參考。 */
+  status?: string;
+}
+
 export interface DSASExtension {
   version: "1.0";
   deceased: DeceasedInfo;
@@ -72,6 +89,7 @@ export interface DSASExtension {
   assets?: Assets;
   artifact?: Artifact;
   consent?: Consent;
+  avatar?: AvatarConfig;
 }
 
 export interface ERC721Attribute {

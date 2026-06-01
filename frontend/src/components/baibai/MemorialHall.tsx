@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, Html } from "@react-three/drei";
+import { WebGLGuard } from "./WebGLGuard";
 import * as THREE from "three";
 import { ChevronLeft, Hand, Flame, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
 
@@ -309,6 +310,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         aria-hidden
       />
 
+      <WebGLGuard>
       <Canvas
         shadows
         camera={{ position: [0, 1.7, 5.5], fov: 45 }}
@@ -351,6 +353,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           minPolarAngle={Math.PI / 6}
         />
       </Canvas>
+      </WebGLGuard>
     </div>
   );
 }

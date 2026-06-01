@@ -16,6 +16,7 @@ import * as React from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
+import { WebGLGuard } from "../WebGLGuard";
 import { ChevronLeft, ArrowRight, Lightbulb } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -92,6 +93,7 @@ export function GardenScene({
         滑鼠左鍵拖曳:環視 ・ 滾輪:縮放
       </p>
 
+      <WebGLGuard>
       <Canvas
         shadows
         camera={{ position: [0, 1.6, 7], fov: 50 }}
@@ -119,6 +121,7 @@ export function GardenScene({
           minPolarAngle={Math.PI / 6}
         />
       </Canvas>
+      </WebGLGuard>
 
       <style jsx global>{`
         @keyframes ritual-hint-fade {

@@ -21,6 +21,7 @@ import * as React from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
+import { WebGLGuard } from "../WebGLGuard";
 import { ChevronLeft, Droplets, ArrowRight } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -129,6 +130,7 @@ export function CorridorScene({
         滑鼠左鍵拖曳:環視 ・ 滾輪:縮放
       </p>
 
+      <WebGLGuard>
       <Canvas shadows camera={{ position: [0, 1.6, 6], fov: 50 }} gl={{ antialias: true }}>
         <color attach="background" args={["#100a08"]} />
         <fog attach="fog" args={["#100a08", 6, 20]} />
@@ -172,6 +174,7 @@ export function CorridorScene({
           minPolarAngle={Math.PI / 5}
         />
       </Canvas>
+      </WebGLGuard>
 
       <style jsx global>{`
         @keyframes ritual-hint-fade {
