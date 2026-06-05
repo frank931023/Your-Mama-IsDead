@@ -69,6 +69,17 @@ const EnvSchema = z.object({
   SIMLI_DEFAULT_FACE_ID: z.string().default("cace3ef7-a4c4-425d-a8cf-a5358eb0c427"),
   SIMLI_MAX_SESSION_SECONDS: z.coerce.number().int().positive().default(600),
   SIMLI_MAX_IDLE_SECONDS: z.coerce.number().int().positive().default(180),
+
+  // Self-hosted LAM render machine (YMID-RENDER-API). Reached over Tailscale.
+  // Handles LLM + voice clone (IndexTTS2) + audio2expression (LAM A2E) +
+  // head-pose (ARTalk) + 3DGS avatar build. When RENDER_BASE is set the
+  // frontend talks to it directly over WebSocket for chat; the backend only
+  // mints the short-lived HS256 token (RENDER_JWT_SECRET, shared with the
+  // render machine) and proxies the one-time avatar/voice asset builds.
+  RENDER_BASE: z.string().url().optional(), // e.g. http://100.122.149.34:8012
+  RENDER_JWT_SECRET: z.string().optional(), // shared secret with render machine
+  RENDER_JWT_AUDIENCE: z.string().default("ymid-render"),
+  RENDER_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

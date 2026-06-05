@@ -15,6 +15,7 @@
     "@react-three/fiber": "^8.18.0",
     "@tanstack/react-query": "^5.51.0",
     "clsx": "^2.1.1",
+    "gaussian-splat-renderer-for-lam": "^0.0.9-alpha.2",
     "lucide-react": "^0.439.0",
     "next": "^14.2.5",
     "react": "^18.3.1",

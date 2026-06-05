@@ -16,18 +16,21 @@
  * 短片 / 重生肖像則為手動按鈕觸發 (因為 fal.ai 一次要付 $0.25)。
  */
 import * as React from "react";
-import { Send, Loader2, AlertCircle, Mic, Square, MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { Send, Loader2, AlertCircle, Mic, Square, MessageSquare, Volume2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useError } from "@/components/ErrorDialog";
 import { ProgressBar } from "@/components/ProgressBar";
 import { SimliAvatar, type SimliAvatarHandle } from "@/components/SimliAvatar";
+import { LamAvatar, type LamAvatarHandle } from "@/components/LamAvatar";
 import { useSiweLogin } from "@/lib/wallet";
 import { streamChat, type ChatMessage } from "@/lib/chat-stream";
 import {
   BACKEND_URL,
   fetchTablet,
+  fetchPersonaPrompt,
   getCloudStatus,
   transcribeAudio,
   type TabletRecord,
@@ -59,9 +62,20 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
   const [latestPortrait] = React.useState<string | null>(null);
   const [latestAudio, setLatestAudio] = React.useState<string | null>(null);
   const [avatarAvailable, setAvatarAvailable] = React.useState(false);
+  // 哪种 avatar provider: "lam"(自建渲染机, WS) | "simli"(云) | null。
+  const [avatarProvider, setAvatarProvider] = React.useState<"lam" | "simli" | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   const messagesScrollRef = React.useRef<HTMLDivElement | null>(null);
   const simliRef = React.useRef<SimliAvatarHandle | null>(null);
+  const lamRef = React.useRef<LamAvatarHandle | null>(null);
+  // LAM 模式: 当前正在接收流式回应的 assistant 气泡 id,供 onTextDelta 累加。
+  const lamAssistantIdRef = React.useRef<string | null>(null);
+
+  const useLam = avatarProvider === "lam" && avatarAvailable && mode === "cloud";
+  // LAM 模式下,若該 tablet 還沒克隆聲音 (metadata.dsas.avatar.voiceLabel 為空),
+  // avatar 會用渲染機的預設聲音。提示使用者去塔位補傳區生成逝者本人的克隆聲音。
+  const needsVoiceClone =
+    useLam && !!tablet?.metadata && !tablet.metadata.dsas?.avatar?.voiceLabel;
   // Guard so a 401 from the avatar session only triggers ONE re-login attempt —
   // if the fresh token is also rejected we stop, instead of looping forever.
   const avatarReauthedRef = React.useRef(false);
@@ -138,7 +152,9 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     let cancelled = false;
     getCloudStatus()
       .then((s) => {
-        if (!cancelled) setAvatarAvailable(s.avatar);
+        if (cancelled) return;
+        setAvatarAvailable(s.avatar);
+        setAvatarProvider(s.avatarProvider);
       })
       .catch(() => {
         /* swallow — avatar simply stays disabled if status probe fails */
@@ -169,7 +185,8 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     // stack; once we `await streamChat` below the grant is gone, so the Simli
     // lip-sync audio pipeline would stay suspended (avatar renders but never
     // moves). No-op when the avatar isn't mounted.
-    if (useAvatar) simliRef.current?.unlockAudio();
+    if (useLam) lamRef.current?.unlockAudio();
+    else if (useAvatar) simliRef.current?.unlockAudio();
 
     const userMsg: UiMessage = {
       id: `u-${Date.now()}`,
@@ -185,6 +202,42 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
     const history: ChatMessage[] = messages.map((m) => ({ role: m.role, content: m.content }));
+
+    // ── LAM 模式:对话走 LamAvatar 的 WS (LLM+TTS+表情都在渲染机) ──────────────
+    // 不走后端 cloud-chat/cloud-voice。文字经 onTextDelta 回来累加;音频+表情由
+    // LamAvatar 自动 prebuffer 播放。WS persona-agnostic,故 messages[0] 要自带
+    // system prompt (与后端 cloud-chat 同一份 buildPersonaSystemPrompt)。
+    //
+    // RAG:每轮把本次问题 (text) 传给 persona-prompt?q=,后端用它对该 persona 的
+    // 对话纪录记忆库检索,把命中的逝者真实语料拼进 system prompt。所以【不缓存】
+    // prompt — 每轮都要按当前问题重新检索 (与缓存 personaPromptRef 的旧逻辑相反)。
+    if (useLam) {
+      try {
+        const { prompt: personaPrompt, memoryUsed } = await fetchPersonaPrompt(tokenId, token, text);
+        // RAG 可觀測性:瀏覽器 console 直接看本輪注入了幾段逝者真實語料 (0 = 沒命中
+        // / 沒上傳對話紀錄)。完整命中明細在「後端」console 的 [RAG] 日誌。
+        console.log(
+          `%c[RAG] 本輪注入 ${memoryUsed} 段記憶`,
+          memoryUsed > 0 ? "color:#10b981;font-weight:bold" : "color:#999",
+          memoryUsed > 0 ? "(AI 會參考逝者本人說過的話)" : "(純 metadata persona;若已上傳對話紀錄請看後端 [RAG] 日誌)",
+        );
+        lamAssistantIdRef.current = assistantMsg.id;
+        const wsMessages = [
+          { role: "system", content: personaPrompt },
+          ...history,
+          { role: "user", content: text },
+        ];
+        lamRef.current?.sendChat(wsMessages);
+        // 不在这里 setSending(false):等 onResponseDone 回调 (见 avatarEl 处)。
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "發送失敗";
+        setMessages((prev) => prev.filter((m) => m.id !== assistantMsg.id));
+        showError("對話發送失敗", msg);
+        setSending(false);
+      }
+      return;
+    }
+
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -231,6 +284,36 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
       setSending(false);
     }
   };
+
+  // ── LAM 模式的流式回调 (传给 <LamAvatar>) ──────────────────────────────────
+  // 文字 token 累加到当前 assistant 气泡;一轮结束清 pending + 放开 sending。
+  const handleLamTextDelta = React.useCallback((delta: string): void => {
+    const id = lamAssistantIdRef.current;
+    if (!id) return;
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, content: m.content + delta, pending: false } : m)),
+    );
+  }, []);
+
+  const handleLamResponseDone = React.useCallback((): void => {
+    const id = lamAssistantIdRef.current;
+    if (id) {
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, pending: false } : m)));
+    }
+    lamAssistantIdRef.current = null;
+    setSending(false);
+  }, []);
+
+  const handleLamError = React.useCallback(
+    (msg: string): void => {
+      showError("分身回應失敗", msg);
+      const id = lamAssistantIdRef.current;
+      if (id) setMessages((prev) => prev.filter((m) => m.id !== id));
+      lamAssistantIdRef.current = null;
+      setSending(false);
+    },
+    [showError],
+  );
 
   // Form-submit wrapper: send what's in the input box, then clear it.
   const send = async (): Promise<void> => {
@@ -333,8 +416,21 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
 
   // Reusable avatar element (or static portrait fallback). Rendered large in
   // both layouts; only its sizing wrapper differs.
+  // provider 决定用自建 LAM (WS + 浏览器 WebGL 3DGS) 还是 Simli 云。
   const avatarEl =
-    useAvatar && token ? (
+    useLam && token ? (
+      <LamAvatar
+        ref={lamRef}
+        tokenId={tokenId}
+        jwt={token}
+        posterUrl={portraitToShow}
+        className="h-full w-full"
+        onAuthError={handleAvatarAuthError}
+        onTextDelta={handleLamTextDelta}
+        onResponseDone={handleLamResponseDone}
+        onError={handleLamError}
+      />
+    ) : useAvatar && token ? (
       <SimliAvatar
         ref={simliRef}
         tokenId={tokenId}
@@ -437,6 +533,18 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
           <h4 className="text-sm font-semibold text-ink">{personName}</h4>
           {modeToggle}
         </div>
+        {needsVoiceClone ? (
+          <Link
+            href={`/tablet/${tokenId}#supplement`}
+            className="flex items-center gap-2 border-b border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold-dark hover:bg-gold/20"
+          >
+            <Volume2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              還沒生成 {shortName(tablet?.metadata, tokenId)} 的克隆聲音 —— 目前用預設嗓音。
+              <span className="underline underline-offset-2">前往補傳區上傳錄音生成本人聲音 →</span>
+            </span>
+          </Link>
+        ) : null}
         <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4">
           {messages.length === 0 ? (
             <p className="text-sm text-ink-muted">
@@ -457,7 +565,10 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
                       : "border border-ink/10 bg-paper-soft text-ink",
                   )}
                 >
-                  {m.content || (m.pending ? "…" : "")}
+                  {/* trimStart:LLM 串流首個 delta 常是換行 (或 <think> 剝離後殘留
+                      前導空白),whitespace-pre-wrap 會把它渲染成開頭空行。去掉開頭
+                      空白,內文段落間的換行保留。 */}
+                  {m.content.replace(/^\s+/, "") || (m.pending ? "…" : "")}
                 </div>
               </li>
             ))}

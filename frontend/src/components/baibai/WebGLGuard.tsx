@@ -40,12 +40,16 @@ interface WebGLGuardProps {
 }
 
 export function WebGLGuard({ children, fallback }: WebGLGuardProps): React.ReactElement {
-  // null = 還沒在 client 端判斷過。先當作可用,mount 後再校正,避免 SSR 閃爍。
-  const [ok, setOk] = React.useState<boolean | null>(null);
-
-  React.useEffect(() => {
-    setOk(detectWebGL());
-  }, []);
+  // 關鍵:必須在「第一次 render 之前」就判定,不能先樂觀渲染 children。
+  // 因為 react-three-fiber 的 <Canvas> (以及 LAM 的 gsplat viewer) 在 mount 那一刻
+  // 就「同步」new WebGLRenderer —— 若先渲染再用 useEffect 校正,Canvas 早就 throw
+  // "Error creating WebGL context" 冒泡成 Unhandled Runtime Error 把整頁打掛了,
+  // 根本等不到 effect 跑。所以用 useState 的 lazy initializer 同步探測一次。
+  //
+  // SSR 安全:detectWebGL() 在無 document 時回 true,SSR 階段照常輸出 children;
+  // client 首次 render 時 lazy initializer 會重新以真實 document 探測,得到正確值。
+  // 兩邊首幀都渲染 children → 不會有 hydration 不一致 (server 一律 true)。
+  const [ok] = React.useState<boolean>(() => detectWebGL());
 
   if (ok === false) {
     return (
@@ -66,7 +70,6 @@ export function WebGLGuard({ children, fallback }: WebGLGuardProps): React.React
     );
   }
 
-  // ok === null(尚未判斷)或 true:正常渲染 3D 內容。null 時先渲染,讓 useEffect
-  // 跑完;若偵測為 false 會在下一個 render 切到 fallback。
+  // WebGL 可用 → 正常渲染 3D 內容。
   return <>{children}</>;
 }

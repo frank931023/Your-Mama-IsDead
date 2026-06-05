@@ -1,10 +1,10 @@
-# DSAS 專案總覽報告(雲端版)
+# DSAS 專案總覽報告
 
 > **DSAS — Data Sovereignty as Soul / 主權數位先祖系統**
 >
-> 一個結合「區塊鏈 NFT」+「永久去中心化儲存」+「生成式 AI」的數位永生服務:讓家屬透過 NFT「擁有」逝者的數位塔位,並能與其互動(對話、聲音、影像、短片)。
+> 一個結合「區塊鏈 NFT」+「永久去中心化儲存」+「生成式 AI」的數位永生服務:讓家屬透過 NFT「擁有」逝者的數位塔位,並能與其互動(即時對話、本人聲音、3D 說話頭)。
 
-本份文件是寫給沒有區塊鏈背景的同學看的「從零開始」版本。我們會先解釋每個名詞是什麼、為什麼要用它,再進入專案架構與實作細節。**本版本聚焦「雲端模式」**(直接呼叫 OpenAI / Anthropic / fal.ai / ElevenLabs 等外部 API);本地離線訓練流程(LoRA / GPT-SoVITS / RAG)的細節會放到另一份文件。
+本份文件是寫給沒有區塊鏈背景的同學看的「從零開始」版本。我們會先解釋每個名詞是什麼、為什麼要用它,再進入專案架構與實作細節。**運算層採用「自建 render 渲染機」**:一台自家的 RTX 5090 主機(透過 Tailscale 內網存取)在本機跑 Qwen3-14B LLM、IndexTTS2 聲音克隆、LAM 3DGS 說話頭與 ARTalk 頭部姿態,不再呼叫任何第三方雲端 API。早期曾設想另一條「本地離線訓練流程」(LoRA / GPT-SoVITS / RAG),**現已廢棄並統一走自建 render 機**。
 
 ---
 
@@ -16,7 +16,7 @@
 4. [基礎名詞解釋(從零開始)](#基礎名詞解釋從零開始)
 5. [使用者流程圖](#使用者流程圖)
 6. [系統架構圖(開發者視角)](#系統架構圖開發者視角)
-7. [雲端模式 vs 離線訓練模式](#雲端模式-vs-離線訓練模式)
+7. [運算層:自建 render 渲染機(早期離線訓練設想已廢棄)](#運算層自建-render-渲染機早期離線訓練設想已廢棄)
 8. [我們使用的模型與服務清單](#我們使用的模型與服務清單)
 9. [模組逐一解釋](#模組逐一解釋)
 10. [完整流程走一遍(端到端)](#完整流程走一遍端到端)
@@ -30,7 +30,7 @@
 
 ## 一句話介紹
 
-> 我們把每位逝者做成一張「鏈上塔位 NFT」。家屬持有這張 NFT,就擁有逝者的照片、影片、音檔、文字記憶等資料的所有權,並能透過 AI 模型即時與「數位分身」互動 — 對話、聽到聲音、看到肖像甚至短片。
+> 我們把每位逝者做成一張「鏈上塔位 NFT」。家屬持有這張 NFT,就擁有逝者的照片、影片、音檔、文字記憶等資料的所有權,並能透過自建 render 渲染機上的 AI 模型即時與「數位分身」互動 — 即時對話、聽到本人聲音、看到會說話的 3D 肖像。
 
 ---
 
@@ -70,12 +70,12 @@
 |---|---|---|
 | **身分層** | 「誰擁有這份記憶?家族關係怎麼記?」 | NFT(ERC-721 + ERC-6150)在 Sepolia 測試鏈上 |
 | **儲存層** | 「照片、影片、音檔放在哪裡能永遠存活?」 | IPFS(Pinata 服務),未來可切到 Arweave |
-| **運算層** | 「怎麼讓 AI 用這些素材重現逝者?」 | 雲端 API(OpenAI / Anthropic / fal.ai / ElevenLabs) |
+| **運算層** | 「怎麼讓 AI 用這些素材重現逝者?」 | 自建 render 渲染機(本地 Qwen3-14B LLM + IndexTTS2 聲音克隆 + LAM 3DGS 說話頭),Tailscale 內網 |
 
 **重點是這三層彼此獨立**:
 - 平台倒了,**身分層**(NFT 紀錄)還在鏈上。
 - 平台倒了,**儲存層**(IPFS 上的檔案)只要還有人 pin 著就在。
-- 平台倒了,**運算層**(LLM 模型)是商品化的,任何人都能買 API 跑同樣的素材。
+- 平台倒了,**運算層**用的全是開源模型(Qwen3 / IndexTTS2 / LAM / ARTalk),任何人都能自架一台同樣的機器、餵同樣的素材跑出同樣的數位分身,不被任何一家雲端供應商綁定。
 
 ---
 
@@ -214,7 +214,8 @@ Irys(舊名 Bundlr)是「Arweave 的快速通道」。直接上傳 Arweave 慢�
 - 怎麼鑄造一張塔位 NFT(`mintRoot`、`safeMintWithParent`)
 - 誰可以鑄造(角色 `MINTER_ROLE`)
 - 怎麼查 owner、parent、children
-- 訓練產物的 URI(`artifactURI` / `setArtifactURI`)
+- 補傳更新 metadata 用的 `setTokenURI`(owner 或 MINTER 可調),以及預留的附加資源 URI `setArtifactURI`
+- 事件:`Minted` / `Burned` / `TokenURIUpdated` / `ArtifactURIUpdated`
 
 部署用 **Foundry**(`forge`)— 是目前以太坊圈最快的開發 / 測試 / 部署工具。
 
@@ -240,14 +241,13 @@ Irys(舊名 Bundlr)是「Arweave 的快速通道」。直接上傳 Arweave 慢�
 
 實作位置:[backend/src/auth/siwe.ts](../backend/src/auth/siwe.ts)。
 
-### LLM、RAG、TTS、Diffusion 是什麼?
+### LLM、TTS、3DGS、blendshape 是什麼?
 
-- **LLM (Large Language Model)**:大型語言模型,像 GPT-4、Claude。給它文字 prompt,它生成文字回應。我們用它扮演「逝者」,以第一人稱回答家屬問題。
-- **RAG (Retrieval-Augmented Generation)**:讓 LLM 在回答前先去「搜尋」一份知識庫(逝者的日記、信件、對話紀錄),再依檢索結果生成回答 — 避免 LLM 胡謅。
-- **TTS (Text-to-Speech)**:文字轉語音。給一段文字,生成 mp3 音檔。我們用 ElevenLabs(可做聲音複製,需要逝者錄音樣本)或 OpenAI TTS。
-- **Diffusion 模型**:像 Stable Diffusion / FLUX,用文字 prompt 生成圖片。我們用 fal.ai 提供的 FLUX schnell。
-- **LoRA (Low-Rank Adaptation)**:在 Diffusion 模型上「微調」一小組權重,讓它學會生成特定人物。15-30 張照片就能訓出一個能還原該人外貌的 LoRA。**這部分屬於離線訓練流程,本份文件不展開,另有專文。**
-- **Video 生成**:fal.ai 上的 Kling / Hailuo / Veo,給文字 prompt 生 5-10 秒短片。
+- **LLM (Large Language Model)**:大型語言模型。給它文字 prompt,它生成文字回應。我們用它扮演「逝者」,以第一人稱回答家屬問題。我們在自建 render 機上用 vLLM 跑開源的 **Qwen3-14B-AWQ**,完全本機推理、不出網。
+- **TTS (Text-to-Speech)**:文字轉語音。給一段文字,生成音檔。我們用開源的 **IndexTTS2**:拿逝者本人的錄音樣本克隆音色,之後任意句子都能用「本人的聲音」念出來,推理在本機完成不出網。
+- **3DGS (3D Gaussian Splatting)**:一種用大量「高斯點雲」表示 3D 場景的技術,可在瀏覽器 WebGL 即時渲染。我們用 **LAM(aigc3d)** 從單張正面照重建出一個 3D 的「說話頭」avatar。
+- **blendshape / ARKit 表情**:把臉部表情拆成一組標準化的維度(例如張嘴、眨眼、揚眉)。我們用 **LAM Audio2Expression** 從語音推出 52 維 ARKit blendshape,讓 3D avatar 的嘴型表情跟著聲音動;再用 **ARTalk** 補上自然的頭部姿態。
+- **聲音克隆**:用逝者本人的錄音(metadata 裡 pin 在 IPFS 的 audios)在 IndexTTS2 上克隆出專屬音色,而不是用通用音庫。需要鑄造或補傳時上傳過本人錄音才做得到。
 
 ---
 
@@ -279,33 +279,31 @@ flowchart TD
 
     Wake -->|否| End1([結束 — 純展示用])
     Wake -->|是| Activate[點「啟動數位分身」]
-    Activate --> Mode{選擇模式}
-    Mode -->|親身打造| Local[離線訓練<br/>另文說明]
-    Mode -->|雲端即時喚起| CloudFlow[/雲端模式/]
+    Activate --> SIWE[SIWE 簽名登入<br/>不花 gas 只簽訊息]
 
-    CloudFlow --> SIWE[SIWE 簽名登入<br/>不花 gas 只簽訊息]
     SIWE --> Verify[(後端驗證<br/>1.簽名有效<br/>2.這地址確實持有此 NFT)]
-    Verify --> Chat[進入三欄聊天介面]
+    Verify --> Chat[進入語音/打字聊天介面]
 
-    Chat --> ChatBox[左欄:輸入訊息]
-    ChatBox --> LLM[(後端組 system prompt<br/>注入逝者生平資料<br/>呼叫 Claude / GPT-4o-mini)]
-    LLM --> Stream[串流回傳逐字回覆]
-    Stream --> AutoVoice[(自動觸發 TTS<br/>ElevenLabs / OpenAI TTS)]
-    AutoVoice --> Play[中欄播放語音<br/>右欄顯示肖像]
+    Chat --> ChatBox[輸入訊息]
+    ChatBox --> WS[(前端開一條 WS<br/>經 backend 代理到 render 機<br/>送完整 messages 陣列)]
+    WS --> LLM[(render 機:vLLM 跑 Qwen3-14B<br/>backend 已組好 persona system prompt)]
+    LLM --> Stream[文字幀 text_delta<br/>逐 token 串流回傳]
+    Stream --> Synth[(render 機逐句合成<br/>IndexTTS2 本人聲音 +<br/>LAM Audio2Expression 52維表情 +<br/>ARTalk 頭姿)]
+    Synth --> Binary[二進位幀:每句一幀<br/>WAV 音檔 + 表情 + 頭姿]
+    Binary --> Play[瀏覽器 WebGL 渲染 3DGS 說話頭<br/>嘴型/表情/聲音同步播放]
 
     Play --> Optional{需要更多?}
-    Optional -->|生成肖像| Portrait[(fal.ai FLUX<br/>生成新肖像)]
-    Optional -->|生成短片| Video[(fal.ai Kling<br/>生成 5-10 秒短片)]
     Optional -->|繼續對話| ChatBox
+    Optional -->|關閉| CloseEnd
 
-    Portrait --> Play
-    Video --> Play
-    Play --> CloseEnd([關閉視窗<br/>後端 GC 快取<br/>原始素材永留 IPFS])
+    Play --> CloseEnd([關閉視窗<br/>WS 斷線<br/>原始素材永留 IPFS])
 ```
 
 **重點是:從鑄造到對話,家屬只跟 MetaMask 簽過兩次有意義的東西**:
 1. **鑄造 NFT**(交易簽名,花一點 gas)
 2. **登入互動**(SIWE 訊息簽名,免費)
+
+> 對話本身完全在自家的 render 渲染機(RTX 5090,Tailscale 內網)上跑,不經過任何第三方雲端 API。
 
 ---
 
@@ -323,7 +321,7 @@ flowchart TB
         Auth["SIWE Auth<br/>EIP-4361 簽名驗證"]
         TabletAPI["Tablet API<br/>查詢 / sync / 家族樹"]
         UploadAPI["Upload Relay<br/>POST 多部分檔案"]
-        CloudPersona["Cloud Persona<br/>(對話 / 語音 / 影像 / 短片<br/>路由分流)"]
+        Persona["Persona / Avatar 服務<br/>(組 system prompt<br/>簽 render token<br/>WS 代理)"]
         DB[("Postgres<br/>(Prisma ORM)<br/>離鏈快取")]
         Redis[("Redis<br/>(BullMQ 佇列)")]
     end
@@ -337,22 +335,19 @@ flowchart TB
         Arweave["Arweave / Irys<br/>(driver 已預留)"]
     end
 
-    subgraph CloudAI["☁️ 外部 AI API"]
-        Anthropic["Anthropic Claude<br/>(對話主力)"]
-        OpenAI["OpenAI GPT-4o-mini / TTS<br/>(對話 / 語音 fallback)"]
-        ElevenLabs["ElevenLabs<br/>(高品質語音複製)"]
-        FAL["fal.ai<br/>FLUX (圖) + Kling (短片)"]
-    end
-
-    subgraph OfflineBox["🖥️ (本地離線訓練 — 另文)"]
-        Training["training/ pipelines<br/>LoRA / GPT-SoVITS / RAG"]
-        ComputeFastAPI["compute/ FastAPI<br/>(:8000) 自架推理"]
+    subgraph RenderBox["🖥️ 自建 render 渲染機 (RTX 5090, Tailscale 內網 :8012)"]
+        LLM["vLLM 跑 Qwen3-14B-AWQ<br/>(本機 LLM,無狀態)"]
+        TTS["IndexTTS2<br/>(本人聲音克隆)"]
+        Expr["LAM Audio2Expression<br/>(52 維 ARKit 表情)"]
+        Pose["ARTalk<br/>(頭部姿態)"]
+        Recon["LAM aigc3d<br/>(單張照重建 3DGS 說話頭)"]
     end
 
     %% Frontend interactions
-    UI -- "錢包連線 / 鑄造 / setArtifactURI" --> Wallet
+    UI -- "錢包連線 / 鑄造 / setTokenURI" --> Wallet
     Wallet -- "簽名後送交易" --> Contract
-    UI -- "REST / SSE" --> Fastify
+    UI -- "REST" --> Fastify
+    UI -- "WS (avatar 對話,經 backend 代理)" --> Persona
     UI -. "讀取已 pin 的圖片 (gateway URL)" .-> IPFS
 
     %% Backend → Chain
@@ -366,88 +361,75 @@ flowchart TB
     %% Backend → DB
     Auth --- DB
     TabletAPI --- DB
-    CloudPersona --- DB
+    Persona --- DB
 
-    %% Backend → Cloud AI
-    CloudPersona -- "stream chat completions" --> Anthropic
-    CloudPersona -- "fallback chat / TTS" --> OpenAI
-    CloudPersona -- "TTS (高品質)" --> ElevenLabs
-    CloudPersona -- "image / video queue" --> FAL
-
-    %% Offline (本文不展開)
-    Training -. "讀素材" .-> IPFS
-    Training -. "setArtifactURI" .-> Contract
-    ComputeFastAPI -. "Compute Proxy" .-> Fastify
-    Fastify -. "/api/personas/:id/chat (proxy)" .-> ComputeFastAPI
-
-    style OfflineBox stroke-dasharray: 5 5,fill:#f5f5f5
+    %% Backend → Render 機 (共享密鑰 HS256 JWT, Tailscale)
+    Persona -- "WS /render?token=jwt<br/>送完整 messages 陣列" --> LLM
+    Persona -- "POST /upload_voice 建聲音" --> TTS
+    Persona -- "POST /upload_avatar 重建 avatar" --> Recon
+    LLM -. "逐句驅動" .-> TTS
+    TTS -. "音檔→表情" .-> Expr
+    Expr -. "+ 頭姿" .-> Pose
 ```
 
 **幾個觀察重點**:
 
 1. **Frontend 直接跟錢包 + 鏈互動**:鑄造 NFT 不經後端 — 後端從來不持有用戶私鑰。
-2. **Backend 是「薄」的**:它做的只是**查鏈、查 DB、proxy 到 AI API**。它不是真理來源,鏈才是。
-3. **AI API 在外面**:雲端模式沒有自架 GPU。所有推理都打外部商業 API。
-4. **Compute / Training 在另一份文件**:虛線部分是離線版本,本份不展開。
+2. **Backend 是「薄」的**:它做的只是**查鏈、查 DB、組 persona prompt、把對話代理到自建 render 機**。它不是真理來源,鏈才是。
+3. **運算在自己的機器上**:LLM / 聲音克隆 / 3D 說話頭全在自家 RTX 5090 上跑,不打任何第三方雲端 AI API,家族敏感對話的隱私更好。
+4. **render 機無狀態、persona 無關**:每輪對話由 backend 把完整 `messages` 陣列發過去;要加 RAG/記憶或改 persona 只動 backend,render 機不用動。
+5. **WS 走 backend 代理**:Chrome 的 Private Network Access 會擋 localhost→私網 IP 的 ws,所以瀏覽器不直連 render 機,而是連到 backend 的 `/api/avatar/ws` 再轉發。
 
 ---
 
-## 雲端模式 vs 離線訓練模式
+## 運算層:自建 render 渲染機(早期離線訓練設想已廢棄)
 
-這是專案最重要的「兩條路」,在前端 [PersonaActivationModal.tsx](../frontend/src/components/PersonaActivationModal.tsx) 中讓家屬選:
+> **早期設想 vs 現況**:專案早期曾規劃「兩條路」——「雲端即時喚起」(打 OpenAI / Anthropic / fal.ai / ElevenLabs)與「親身打造的記憶」(離線跑 LoRA / GPT-SoVITS / RAG 訓練)。這兩條路**現在都已廢棄**,統一改成一台**自建 render 渲染機**:既保有「本人聲音、本人長相」的擬真度,又不需要每位逝者離線跑數小時訓練,也不把家族對話送出去給第三方雲端。下面這張表是給你理解我們為什麼這麼選。
 
-| 維度 | ☁️ 雲端即時喚起(本份重點) | 🖥️ 親身打造的記憶(離線訓練,另文) |
-|---|---|---|
-| 啟動延遲 | 即時(SSE 串流) | 需先跑數小時訓練 |
-| 對話品質 | 通用 LLM + 鏈上素材作 prompt | LoRA + RAG,更貼近本人語氣 |
-| 肖像還原 | FLUX 文字生成 prompt 描述外貌 | 訓練專屬 LoRA,直接還原長相 |
-| 聲音還原 | ElevenLabs 預設音色(可選聲音複製) | GPT-SoVITS 本地訓練,完全本人音色 |
-| 資料隱私 | 對話經過 Anthropic / OpenAI | 完全本機,可離線 |
-| 設備需求 | 任何瀏覽器 | RTX 4090 / A6000 等級 GPU |
-| 成本 | API 計費,逐次扣 | 一次訓練成本,後續本機推理 |
-| 上鏈紀錄 | `artifactURI` 為空 | `artifactURI` 指向訓練產物的 CID |
-| 目前狀態 | ✅ **已完成** | 🚧 開發中(訓練 pipeline 1-7 已寫好,推理服務整合中) |
+| 維度 | 自建 render 渲染機(現行唯一方案) |
+|---|---|
+| 機器 | 一台自家的 RTX 5090,透過 Tailscale 內網(`http://100.122.149.34:8012`)存取 |
+| LLM 對話 | 本機 vLLM 跑開源 **Qwen3-14B-AWQ**;backend 組好 persona system prompt 後把完整 messages 發過去 |
+| 聲音還原 | **IndexTTS2** 用本人錄音克隆音色,本機推理不出網,任意句子都用「本人聲音」念 |
+| 肖像 / 表情 | **LAM aigc3d** 從單張正面照重建 3DGS 說話頭;**LAM Audio2Expression** 出 52 維 ARKit 表情;**ARTalk** 補頭部姿態;瀏覽器 WebGL 即時渲染 |
+| 啟動延遲 | 即時(WS 串流)。LLM 首 token ~100ms;TTS 是瓶頸(IndexTTS2 RTF≈2.7),瀏覽器需預緩衝約 1.8-3s 音檔再播 |
+| 資料隱私 | 對話完全在自己的機器上跑,**不經過任何第三方雲端 API** |
+| 預構建 | 每位逝者一次:`/upload_voice` 建聲音、`/upload_avatar`(阻塞 ~100s)重建 avatar,label 存進 NFT metadata |
+| 上鏈紀錄 | avatar / voice 的 label 寫在 metadata.dsas.avatar;素材本體 pin 在 IPFS |
 
-> **本份報告完全聚焦在「雲端模式」**,因為它是 prototype 期間的主路徑、也是同學第一次 demo 會用到的路徑。
+> **為什麼能做到「平台倒了還能重現」**:render 機跑的全是開源模型(Qwen3 / IndexTTS2 / LAM / ARTalk),任何人都能自架一台同樣的機器、餵同一份 IPFS 素材跑出同一個數位分身,不被任何一家供應商綁定。
 
 ---
 
 ## 我們使用的模型與服務清單
 
-雲端模式下,backend 會根據 `.env` 哪些 API key 有設定**自動選擇供應商**,fallback 順序如下(原始碼:[backend/src/cloud-persona.ts](../backend/src/cloud-persona.ts)):
+運算層全部跑在自建 render 渲染機(RTX 5090,Tailscale 內網 `http://100.122.149.34:8012`)上。backend 負責組 persona system prompt、簽發短期 render token、並把對話經 WS 代理到 render 機;render 機本身無狀態、persona 無關。
 
-### 文字對話(Chat)
-
-| 順序 | 模型 | 為什麼 |
-|---|---|---|
-| 1️⃣ 優先 | **Anthropic Claude**(`claude-sonnet-4-6`)| 中文較自然、價格較穩、串流穩定 |
-| 2️⃣ Fallback | **OpenAI GPT-4o-mini** | 便宜、速度快、quality 對 prototype 夠用 |
-
-> **Prompt 設計**:每次對話開始,後端會把鏈上 metadata 的「姓名 / 生卒 / 籍貫 / 傳記 / 墓誌銘 / 子孫名單」自動組成 system prompt(`buildPersonaSystemPrompt`),要求模型用「第一人稱」、「保持溫暖」、「無法回答的事誠實承認」。
-
-### 語音(Voice / TTS)
-
-| 順序 | 模型 | 為什麼 |
-|---|---|---|
-| 1️⃣ 優先 | **ElevenLabs**(`eleven_multilingual_v2`)| 支援聲音複製,品質最好;若有逝者錄音樣本可訓 voice ID |
-| 2️⃣ Fallback | **OpenAI TTS**(`tts-1`,voice = `shimmer`)| 沒有聲音複製,但中文自然、便宜 |
-
-### 肖像(Image)
-
-| 順序 | 模型 | 為什麼 |
-|---|---|---|
-| 1️⃣ 優先 | **fal.ai 的 FLUX schnell** | 約 $0.003 / 張,品質好、速度快 |
-| 2️⃣ Fallback | **OpenAI gpt-image-1** | 約 $0.04 / 張,較貴但 prompt 理解力好 |
-
-> 我們會給模型一段「memorial portrait of {姓名}, dignified, soft natural light, photographic quality...」的 wrapping prompt,讓家屬只要描述場景就好。
-
-### 短片(Video)
+### 文字對話(LLM)
 
 | 模型 | 為什麼 |
 |---|---|
-| **fal.ai 的 Kling v1.6 standard**(`fal-ai/kling-video/v1.6/standard/text-to-video`)| 對亞洲面孔 / 中文場景描述支援較好;一次渲染約 30-90 秒,$0.25 / 段 |
+| **Qwen3-14B-AWQ**(render 機上用 vLLM 跑) | 開源、本機推理不出網;中文自然;首 token 約 100ms。服務端會把模型輸出的 `<think>` 段先剝掉再回傳 |
 
-> 因為一段就要 $0.25,所以我們**短片改成手動按鈕觸發**(對話訊息不會自動生短片)。
+> **Prompt 設計**:每輪對話,後端用 `buildPersonaSystemPrompt` 把鏈上 metadata 的「姓名 / 生卒 / 籍貫 / 傳記 / 墓誌銘 / 子孫名單」組成 system prompt,風格要求「像家人朋友般口語閒聊、回覆短(通常 1-2 句)」。每輪由 backend 把完整 messages 陣列發給 render 機。
+
+### 語音(Voice / TTS)
+
+| 模型 | 為什麼 |
+|---|---|
+| **IndexTTS2**(render 機本機推理) | 開源、支援聲音克隆;用逝者本人錄音樣本克隆音色,本機推理不出網。瓶頸在這裡(RTF≈2.7),所以瀏覽器需預緩衝約 1.8-3s 音檔再播放,否則句間有空白 |
+
+> 聲音克隆從鑄造 / 補傳時上傳的本人音檔(`metadata.dsas.assets.audios`)來做;若當初沒傳,聊天頁會提示用戶去塔位頁補傳。預構建走 render 機的 `POST /upload_voice`,backend 包成 `/api/avatar/build-voice`,回傳 voice label 存進 metadata。
+
+### 肖像 / 表情 / 頭姿(3D 說話頭)
+
+| 模型 | 角色 |
+|---|---|
+| **LAM aigc3d** | 從單張正面照重建 3D Gaussian Splat 說話頭,瀏覽器 WebGL 渲染。預構建走 `POST /upload_avatar`(阻塞 ~100s),backend 包成 `/api/avatar/build`,回傳 avatar label + zip url |
+| **LAM Audio2Expression** | 從合成出來的語音推出 52 維 ARKit blendshape,驅動 avatar 嘴型表情 |
+| **ARTalk** | 補上自然的頭部姿態 |
+
+> 對話時 render 機**每句一個二進位幀**回傳:`[uint32 LE meta_len][meta JSON][WAV 24kHz mono PCM16 音檔][float32 (n,52) ARKit 表情][float32 (n,3) 頭姿(可選)]`,瀏覽器拿到就同步播放聲音 + 驅動 3DGS 說話頭。
 
 ### 區塊鏈相關
 
@@ -487,7 +469,7 @@ flowchart TB
 
 ### 1. [contracts/](../contracts/) — 智能合約
 
-職責:鏈上身分層。在 Sepolia 部署一份合約,記錄每張塔位的 owner、家族父子關係、metadata URI、訓練產物 URI。
+職責:鏈上身分層。在 Sepolia 部署一份合約,記錄每張塔位的 owner、家族父子關係、metadata URI。
 
 關鍵檔案:[contracts/src/DigitalTablet.sol](../contracts/src/DigitalTablet.sol)
 
@@ -496,14 +478,16 @@ flowchart TB
 mapping(uint256 => uint256) private _parentOf;       // ERC-6150 父節點
 mapping(uint256 => uint256[]) private _childrenOf;   // ERC-6150 子節點
 mapping(uint256 => string) private _tokenURIs;       // 指向 IPFS 上的 metadata.json
-mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模式留空)
+mapping(uint256 => string) private _artifactURI;     // 預留的附加資源 URI(一般留空)
 ```
 
 關鍵函式:
 - `mintRoot(to, tokenURI_)` — 鑄造家族根節點(只有 MINTER_ROLE 能呼叫)
 - `safeMintWithParent(to, parentId, tokenURI_)` — 鑄造子節點(必須是 parent 的 owner 或 MINTER_ROLE)
-- `setArtifactURI(tokenId, uri)` — 訓練後回填產物 URI(只有 owner 能呼叫)
+- `setTokenURI(tokenId, uri)` — 補傳時把更新後的 metadata 重新指過去(owner 或 MINTER 可調)
+- `setArtifactURI(tokenId, uri)` — 預留的附加資源 URI(owner 或 MINTER 可調)
 - `parentOf` / `childrenOf` / `isRoot` / `isLeaf` — 唯讀視圖
+- 事件:`Minted` / `Burned` / `TokenURIUpdated` / `ArtifactURIUpdated`
 
 ### 2. [storage/](../storage/) — 儲存層抽象
 
@@ -519,21 +503,19 @@ mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模�
 
 ### 3. [backend/](../backend/) — 應用後端(Fastify)
 
-職責:**薄薄一層**,接前端 REST、查鏈、查 DB、proxy 到雲端 AI。**從不持有家屬私鑰**。
+職責:**薄薄一層**,接前端 REST、查鏈、查 DB、組 persona prompt、把對話 WS 代理到自建 render 機。**從不持有家屬私鑰**;render 機的共享密鑰也**只有後端持有**,前端只拿短期簽發的 token。
 
 關鍵檔案 / 路由:
-- [backend/src/server.ts](../backend/src/server.ts) — Fastify 啟動,掛載 5 條路由
+- [backend/src/server.ts](../backend/src/server.ts) — Fastify 啟動,掛載各條路由
 - [backend/src/auth/siwe.ts](../backend/src/auth/siwe.ts) — SIWE nonce + 簽名驗證 + JWT 簽發
 - [backend/src/auth/middleware.ts](../backend/src/auth/middleware.ts) — `requireAuth` + `requireOwner(tokenId)`
 - [backend/src/chain.ts](../backend/src/chain.ts) — viem 唯讀合約呼叫(`ownerOf` / `tokenURI` / `parentOf` / `childrenOf` / `artifactURI`)
-- [backend/src/cloud-persona.ts](../backend/src/cloud-persona.ts) — **雲端模式核心**,所有外部 API 細節(Anthropic / OpenAI / ElevenLabs / fal.ai)集中於此
+- **Persona / Avatar 邏輯** — `buildPersonaSystemPrompt` 組 persona system prompt;用共享密鑰 HS256 JWT(`RENDER_JWT_SECRET`,`aud=ymid-render`,預設 TTL 1800s)簽短期 render token;把瀏覽器 WS 代理到 render 機的 `/render?token=<jwt>`
 - [backend/src/routes/auth.ts](../backend/src/routes/auth.ts) — `POST /api/auth/nonce` + `POST /api/auth/verify`
 - [backend/src/routes/tablets.ts](../backend/src/routes/tablets.ts) — 塔位查詢 / sync / 家族樹 BFS
 - [backend/src/routes/uploads.ts](../backend/src/routes/uploads.ts) — Pinata pin 中繼上傳
-- [backend/src/routes/personas.ts](../backend/src/routes/personas.ts) — **對話 / 語音 / 影像 / 短片端點**(`/cloud-chat` / `/cloud-voice` / `/cloud-portrait` / `/cloud-video`)
-- [backend/src/routes/jobs.ts](../backend/src/routes/jobs.ts) — 訓練任務狀態查詢(離線模式用)
-- [backend/src/queue/training.ts](../backend/src/queue/training.ts) — BullMQ worker(離線模式用)
-- [backend/prisma/](../backend/prisma/) — 資料庫 schema:`Tablet` / `Session`(SIWE nonce)/ `User` / `TrainingJob`
+- **Avatar 路由** — `/api/avatar/ws`(WS 代理到 render 機)、`/api/avatar/build-voice`(包 render 機 `/upload_voice`)、`/api/avatar/build`(包 render 機 `/upload_avatar`)
+- [backend/prisma/](../backend/prisma/) — 資料庫 schema:`Tablet` / `Session`(SIWE nonce)/ `User` 等
 
 ### 4. [frontend/](../frontend/) — 使用者介面(Next.js)
 
@@ -541,7 +523,7 @@ mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模�
 - [/](../frontend/src/app/page.tsx) — 首頁介紹
 - [/mint](../frontend/src/app/mint/page.tsx) — 5 步驟鑄造向導(基本資料 → 上傳 → 子孫 → 家族脈絡 → 簽名)
 - [/tablet/[tokenId]](../frontend/src/app/tablet/) — 塔位展示頁 + 啟動數位分身
-- [/tablet/[tokenId]/chat](../frontend/src/app/tablet/) — 三欄聊天介面
+- [/tablet/[tokenId]/chat](../frontend/src/app/tablet/) — avatar 聊天介面(語音全屏 / 打字左右雙布局)
 - [/dashboard](../frontend/src/app/dashboard/page.tsx) — 我持有的塔位列表
 - [/registry](../frontend/src/app/registry/page.tsx) — 全平台塔位總覽
 - [/lineage/[rootId]](../frontend/src/app/lineage/) — 家族樹視覺化
@@ -552,31 +534,34 @@ mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模�
 - [MediaUploader.tsx](../frontend/src/components/MediaUploader.tsx) — 拖拉上傳 → 自動 pin → 回 CID
 - [ChatLogImporter.tsx](../frontend/src/components/ChatLogImporter.tsx) — 6 平台對話紀錄匯入
 - [ConsentForm.tsx](../frontend/src/components/ConsentForm.tsx) — 鑄造前的同意聲明
-- [PersonaActivationModal.tsx](../frontend/src/components/PersonaActivationModal.tsx) — 雲端 vs 離線模式選擇 modal
-- [ChatInterface.tsx](../frontend/src/components/ChatInterface.tsx) — 三欄聊天主元件(對話 / 肖像 / 語音+短片)
+- [PersonaActivationModal.tsx](../frontend/src/components/PersonaActivationModal.tsx) — 啟動數位分身的入口 modal(檢查 avatar / voice 是否已預構建)
+- [ChatInterface.tsx](../frontend/src/components/ChatInterface.tsx) — avatar 聊天主元件:開 WS 經 backend 代理到 render 機,3DGS 說話頭 WebGL 渲染 + 本人聲音同步播放
 - [FamilyTree.tsx](../frontend/src/components/FamilyTree.tsx) — react-flow 家族樹
 
 關鍵 lib:
 - [lib/wagmi.ts](../frontend/src/lib/wagmi.ts) — wagmi v2 設定,鏈 / 錢包 / RPC
 - [lib/contract.ts](../frontend/src/lib/contract.ts) — DigitalTablet ABI 與互動封裝
-- [lib/wallet.ts](../frontend/src/lib/wallet.ts) — Hooks(`useMintTablet` / `useSiweLogin` / `useSetArtifactURI`)
+- [lib/wallet.ts](../frontend/src/lib/wallet.ts) — Hooks(`useMintTablet` / `useSiweLogin` / 補傳時用 `setTokenURI` 更新 metadata)
 - [lib/api.ts](../frontend/src/lib/api.ts) — Backend REST client
-- [lib/chat-stream.ts](../frontend/src/lib/chat-stream.ts) — SSE 解析器,逐 token 顯示
+- [lib/chat-stream.ts](../frontend/src/lib/chat-stream.ts) — WS 幀解析:文字幀逐 token 顯示、二進位幀拆出音檔 / 表情 / 頭姿
 - [lib/metadata-builder.ts](../frontend/src/lib/metadata-builder.ts) — 組 NFT metadata JSON
 
-### 5. [compute/](../compute/) — FastAPI 推理服務(離線模式用,本份不展開)
+### 5. 自建 render 渲染機(取代早期的 compute/ 與 training/)
 
-雲端模式**不需要這個服務**;backend 直接打外部 API。
-離線模式才需要 `compute/` 在自架 GPU 上跑 LoRA 推理 + GPT-SoVITS TTS + RAG 對話。
+> 早期 monorepo 裡的 `compute/`(FastAPI 推理服務)與 `training/`(離線 LoRA / GPT-SoVITS / RAG 7 步 pipeline)這兩條路**已廢棄,不再使用**。運算層統一改成一台自建 render 渲染機。
 
-### 6. [training/](../training/) — 離線訓練 pipeline(本份不展開)
+render 機(RTX 5090,Tailscale 內網 `http://100.122.149.34:8012`)上跑:
+- **vLLM + Qwen3-14B-AWQ** — LLM 執行
+- **IndexTTS2** — 用本人錄音克隆聲音,本機推理不出網
+- **LAM Audio2Expression** — 音檔→52 維 ARKit blendshape
+- **ARTalk** — 頭部姿態
+- **LAM aigc3d** — 單張照重建 3DGS 說話頭
 
-7 步腳本(fetch_assets → caption → train_lora → train_voice → build_rag → package → upload),只在「親身打造的記憶」模式啟動。
+對外端點:`POST /upload_voice`(建聲音)、`POST /upload_avatar`(重建 avatar)、WS `/render?token=<jwt>`(即時對話)。render 機**無狀態、persona 無關**:每輪對話由 backend 把完整 messages 陣列發過去。
 
-### 7. [shared/types/](../shared/types/) — 跨服務型別
+### 6. [shared/types/](../shared/types/) — 跨服務型別
 
-- [tablet.ts](../shared/types/tablet.ts) — `TabletMetadata` JSON schema(NFT metadata)
-- [artifact.ts](../shared/types/artifact.ts) — `ArtifactManifest`(訓練產物)
+- [tablet.ts](../shared/types/tablet.ts) — `TabletMetadata` JSON schema(NFT metadata,含 `dsas.avatar` 的 avatar / voice label)
 
 ---
 
@@ -600,38 +585,38 @@ mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模�
 5. 交易上鏈 → 合約執行 `_safeMint(to, tokenId=1)` + 把 `_tokenURIs[1] = "ipfs://..."` 寫好 → emit `Minted` event
 6. 前端 `POST /api/tablets/sync/1` → 後端用 viem 呼叫 `ownerOf(1)`、`tokenURI(1)`、抓 IPFS metadata 回來,upsert 進 Postgres 快取 → 完成。
 
-### Phase 2 — 啟動數位分身(雲端模式,不上鏈)
+### Phase 2 — 啟動數位分身(不上鏈)
 
 1. 王小華進 `/tablet/1`,看到爸爸的照片牆 + 生平 + 子孫脈絡。
 2. 點「啟動數位分身」→ [PersonaActivationModal](../frontend/src/components/PersonaActivationModal.tsx) 彈出。
-3. 前端先 GET `/api/personas/cloud-status`(後端讀 `.env` 哪些 key 有設,告訴前端「對話、語音、影像、短片」哪些可用)。
-4. 王小華選「雲端即時喚起」→ router push 到 `/tablet/1/chat?mode=cloud`。
+3. 前端確認這張塔位的 metadata.dsas.avatar 已有預構建好的 avatar label / voice label(鑄造時或塔位頁補傳時透過 `/api/avatar/build` 與 `/api/avatar/build-voice` 建好)。若沒有,提示去塔位頁補傳本人照片 / 錄音。
+4. 前端 router push 到 `/tablet/1/chat`。
 5. 進到 [ChatInterface](../frontend/src/components/ChatInterface.tsx),自動觸發 `useSiweLogin(1)`:
    - 前端 GET `/api/auth/nonce?address=王小華地址` → 後端產生 nonce 寫進 DB
    - 前端組 SIWE 訊息(包含 nonce、domain、URI)→ MetaMask 跳出**簽名訊息**(注意:不是交易,**免費**)
    - 前端 POST `/api/auth/verify { message, signature }` → 後端跑 `siwe.verify` + 比對 nonce + 確認 nonce 沒被用過 → 簽發 JWT
-6. 前端拿到 JWT,儲存在 React state,後續所有 cloud-* 端點都帶這個 Bearer token。
+6. 前端拿到 JWT,儲存在 React state,後續開 avatar WS 時用它換一個短期 render token。
 
-### Phase 3 — 對話(SSE 串流)
+### Phase 3 — 對話(WS 串流,經 backend 代理到 render 機)
 
 1. 王小華輸入「爸,你還記得我們在彰化老家後院種的芒果樹嗎?」
-2. 前端 POST `/api/personas/1/cloud-chat`(帶 JWT + history + message)
-3. Backend [personas.ts](../backend/src/routes/personas.ts):
+2. 前端開一條 WS 連到 backend 的 `/api/avatar/ws`(帶 JWT)。Backend:
    - `requireAuth`:檢查 JWT 有效
    - `requireOwner("tokenId")`:從鏈上查 `ownerOf(1)` 必須等於 JWT.address
    - `prisma.tablet.findUnique({ where: { tokenId: 1n } })` 取出快取 metadata
-   - 呼叫 [`buildPersonaSystemPrompt(metadata)`](../backend/src/cloud-persona.ts)組 system prompt(把生卒、籍貫、傳記、墓誌銘、子孫名單塞進去)
-   - 呼叫 [`streamPersonaChat`](../backend/src/cloud-persona.ts) → 因為 `.env` 設了 `ANTHROPIC_API_KEY`,選 Claude
-4. Claude 開始串流回覆 → backend 把每個 token 包成 `event: token\ndata: ...\n\n` SSE frame 推回前端
-5. 前端 [chat-stream.ts](../frontend/src/lib/chat-stream.ts) 解析 SSE → 逐字顯示在對話視窗
-6. **回覆完成後**,前端自動 POST `/api/personas/1/cloud-voice { text: 整段回覆 }` → backend 呼叫 ElevenLabs 或 OpenAI TTS → 回 mp3 → 前端 autoplay。
-7. 王小華可選按「重生肖像」按鈕:前端 POST `/api/personas/1/cloud-portrait { prompt: "在彰化老家芒果樹下" }` → backend 把 prompt 包成「Memorial portrait of 王大明, dignified...」→ 呼叫 fal.ai FLUX → 回圖片 URL → 前端 `<img>` 顯示。
-8. 也可按「短片追憶」:同樣機制,改打 fal.ai Kling,等 30-90 秒回 mp4 URL。
+   - 用 `buildPersonaSystemPrompt(metadata)` 組 persona system prompt(把生卒、籍貫、傳記、墓誌銘、子孫名單塞進去,風格要求像家人朋友口語閒聊、回覆短)
+   - 用共享密鑰 HS256 JWT(`RENDER_JWT_SECRET`,`aud=ymid-render`)簽一個短期 render token,代理連到 render 機的 `/render?token=<jwt>`
+     - (註:Chrome 的 Private Network Access 會擋瀏覽器 localhost→私網 IP 的 ws,所以一定要走 backend WS 代理,瀏覽器不直連 render 機)
+3. 每輪 backend 把 `{type:'chat', request_id, messages:[...完整陣列...], voice, temperature}` 發給 render 機。
+4. render 機回兩種幀:
+   - **文字幀** `text_delta`:vLLM 跑 Qwen3-14B 的串流 token(`<think>` 已被服務端剝掉)+ `done` / `error`
+   - **二進位幀(每句一幀)**:`[uint32 LE meta_len][meta JSON][WAV 24kHz mono PCM16 音檔][float32 (n,52) ARKit 表情][float32 (n,3) 頭姿(可選)]`,音檔用 IndexTTS2 的本人克隆音色,表情由 LAM Audio2Expression、頭姿由 ARTalk 產生
+5. 前端 [chat-stream.ts](../frontend/src/lib/chat-stream.ts) 解析:文字幀逐字顯示;二進位幀拆出音檔 + 表情 + 頭姿,預緩衝約 1.8-3s 後播放,並驅動 WebGL 上的 3DGS 說話頭嘴型與表情同步。
 
 ### Phase 4 — 結束
 
-1. 王小華關掉視窗 → SSE connection close。
-2. Backend 沒有持久記住對話內容(history 由前端 state 維持,送 cloud-chat 時帶過來)。
+1. 王小華關掉視窗 → WS 斷線。
+2. Backend / render 機都沒有持久記住對話內容(render 機無狀態;history 由前端 state 維持,每輪都把完整 messages 陣列帶過來)。
 3. 鏈上的 metadata + IPFS 上的素材**永遠不變**。下次王小華(或他兒子,只要持有 NFT)登入,可以再 demo 一次。
 
 ---
@@ -644,13 +629,13 @@ mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模�
 |---|---|---|---|
 | **NFT 所有權** | Sepolia 鏈上(`_owners` mapping) | 唯一真理來源,不可篡改 | 一筆交易 gas |
 | **家族父子關係** | Sepolia 鏈上(`_parentOf` / `_childrenOf`) | 鏈上即家譜,不依賴 DB | 鑄造子節點時自動寫 |
-| **metadata.json**(姓名、生卒、傳記、子孫名單、所有素材 CIDs)| IPFS via Pinata | JSON 較大,鏈上太貴 | Pin 一次免費 |
+| **metadata.json**(姓名、生卒、傳記、子孫名單、所有素材 CIDs、`dsas.avatar` 的 avatar/voice label)| IPFS via Pinata | JSON 較大,鏈上太貴 | Pin 新 JSON 後一筆 setTokenURI gas |
 | **大頭照、照片、影片、音檔、對話紀錄** | IPFS via Pinata | 同上 | Pin 一次免費 |
-| **訓練產物 manifest URI** | Sepolia 鏈上(`_artifactURI` mapping)| 雲端模式留空,離線模式由 owner 填 | 一筆 setArtifactURI gas |
-| **訓練產物本體**(LoRA / voice / RAG)| IPFS via Pinata | 大檔案,只能放鏈下 | (離線模式才產生)|
+| **avatar / voice label**(指向 render 機重建好的 3DGS avatar 與克隆音色)| 寫在 metadata.dsas.avatar(IPFS) | label 本身很小,跟 metadata 一起 pin | 補傳時 merge 進 metadata 重新 pin |
+| **avatar zip / 原始照片 / 原始錄音** | IPFS via Pinata | 大檔案,只能放鏈下 | Pin 一次免費 |
 | **離鏈快取**(Postgres `Tablet` 表)| 後端 DB | 加速前端查詢,不必每次都打 RPC | 隨時可重建 |
 | **SIWE nonce / Session** | Postgres `Session` 表 | 一次性、TTL 10 分鐘 | 短期狀態 |
-| **JWT secret / 各 API key** | `.env`(永不進 git) | Secrets | 換新就行 |
+| **JWT secret / RENDER_JWT_SECRET** | `.env`(永不進 git,render 共享密鑰僅後端持有) | Secrets | 換新就行 |
 
 > **想像最壞的情況**:DSAS 平台一夜倒閉、後端伺服器消失、Postgres 資料被刪。**家屬會失去什麼?** 答案是:**只失去快取**。鏈上的 NFT、IPFS 上的素材都還在,任何懂技術的人拿著家屬錢包地址,可以從 Etherscan 查到所有 tokenId、用 `tokenURI` 從 IPFS 抓回 metadata、再順著 metadata 抓回所有素材 — 這就是「資料主權」。
 
@@ -672,9 +657,9 @@ mapping(uint256 => string) private _artifactURI;     // 訓練產物(雲端模�
 - **根節點**(`mintRoot`):只有 `MINTER_ROLE` 能呼叫 — prototype 階段是 deployer 自己。未來可以改成「只有預先白名單的家族管理者」。
 - **子節點**(`safeMintWithParent`):呼叫者**必須是 parent 的 owner**(或有 `MINTER_ROLE`),這對應「兒子過世時,做兒子塔位的權力應該屬於父母」。
 
-### 3. 訓練產物 URI 只有 owner 能改
+### 3. 更新 metadata URI 只有 owner(或 MINTER)能改
 
-`setArtifactURI(tokenId, uri)` 強制檢查 `msg.sender == ownerOf(tokenId) || hasRole(MINTER_ROLE, msg.sender)`。
+補傳時呼叫的 `setTokenURI(tokenId, uri)`(以及預留的 `setArtifactURI`)強制檢查 `msg.sender == ownerOf(tokenId) || hasRole(MINTER_ROLE, msg.sender)`。
 
 ### 4. SIWE nonce 一次性 + TTL
 
@@ -715,31 +700,30 @@ ERC-6551 是讓 NFT 本身擁有錢包。對我們的場景:
 - 少一層合約 = 更省 gas、更低風險、更簡單 UX
 - 未來想加「祭祀基金」、「子 NFT 容器」等功能,ERC-6551 可以隨時加掛在現有 ERC-721 上,不破壞既有架構
 
-### Why backend / compute 拆兩個服務?
+### Why backend 與 render 機拆開?
 
-- `backend` 是 Node/TS,薄、快,處理鏈互動 + DB + proxy。常駐
-- `compute` 是 Python/FastAPI,重、吃 GPU,跑 LoRA / TTS / RAG 推理。**只在離線模式啟動**
+- `backend` 是 Node/TS,薄、快,處理鏈互動 + DB + 組 persona prompt + WS 代理。常駐
+- **render 渲染機**是吃 GPU 的重活(RTX 5090):vLLM 跑 Qwen3-14B、IndexTTS2 聲音克隆、LAM 3DGS / Audio2Expression、ARTalk
 
-雲端模式根本不需要 `compute`,直接從 backend 打外部 API,reduce 對自架 GPU 的依賴。
+render 機刻意做成**無狀態、persona 無關**:每輪由 backend 把完整 messages 陣列發過去。這樣要加 RAG / 記憶或改 persona 只動 backend,render 機不必重啟,也方便日後多台 render 機水平擴展。
 
-### Why 雲端模式優先 Anthropic?
+### Why 運算層自建,不打雲端 API?
 
-`.env` 設了兩家 key 時優先 Anthropic 的原因(寫在 cloud-persona.ts 註解):
-- 中文較自然
-- 串流穩定
-- 價格較穩
+早期曾打算直接呼叫 OpenAI / Anthropic / fal.ai / ElevenLabs,但改成自建 render 機後:
+- **隱私**:家族敏感對話只在自己的機器上跑,不送任何第三方雲端
+- **擬真**:IndexTTS2 用本人錄音克隆音色、LAM 從本人照片重建 3D 說話頭,比通用音色 / 文字生圖更像本人
+- **韌性**:全是開源模型(Qwen3 / IndexTTS2 / LAM / ARTalk),任何人都能自架同樣的栈跑同樣素材,不被供應商綁定
+- **成本**:一台機器跑到飽,不必逐次計費
 
-OpenAI 是 fallback,主要看 quota 用量。
+### Why 對話用 WebSocket(經 backend 代理)?
 
-### Why 對話用 SSE 不用 WebSocket?
+- 一輪對話要同時串「文字 token + 每句的音檔/表情/頭姿二進位幀」,雙向 + 二進位用 WS 最自然
+- Chrome 的 Private Network Access 會擋瀏覽器 localhost→私網 IP 的 ws,所以 WS 不是瀏覽器直連 render 機,而是走 **backend WS 代理**(`/api/avatar/ws`),順便在這層做持有者驗證並簽短期 render token
+- 對話 history 由 client 維護,render 機 stateless
 
-- SSE 是單向(server → client)、走標準 HTTP、瀏覽器原生支援、不用 upgrade headers
-- LLM streaming 本質就是單向,SSE 完全夠
-- 對話 history 由 client 維護,backend stateless
+### Why 預構建 avatar / voice 要先做一次?
 
-### Why 短片要手動觸發,不像語音那樣自動?
-
-fal.ai Kling 一段 $0.25,每則 assistant 訊息都自動生會燒錢。語音($0.001 ~ $0.01 級)就比較能 autoplay。
+`/upload_avatar`(LAM 重建 3DGS)阻塞約 100s、`/upload_voice`(IndexTTS2 克隆)也要時間。把它們做成「每位逝者鑄造時(或塔位頁補傳時)一次性預構建」,label 存進 metadata,聊天時就能即時開 WS、不必每次重建。
 
 ### Why 用 Foundry 不用 Hardhat?
 
@@ -758,15 +742,15 @@ fal.ai Kling 一段 $0.25,每則 assistant 訊息都自動生會燒錢。語音(
 | W1 合約 MVP(ERC-721 + ERC-6150 + Foundry test + Sepolia 部署)| ✅ 已完成 |
 | W2 儲存層 + metadata(Pinata IPFS + chatlog parser × 6)| ✅ 已完成 |
 | W3 前端鑄造流程(5 步驟向導 + IPFS pin + 簽名)| ✅ 已完成 |
-| W4 線下訓練 pipeline | 🚧 7 步腳本骨架已寫,實際 LoRA / voice 訓練調校中 |
-| W5 推理服務(compute FastAPI)| 🚧 端點已通,LRU 快取與 fallback 邏輯整合中 |
-| W6 互動前端(三軌同步聊天)| ✅ **雲端模式**已可用 |
+| W4 自建 render 機:vLLM Qwen3-14B + IndexTTS2 聲音克隆 | ✅ 本機推理已通 |
+| W5 avatar 預構建 + 即時對話(LAM 3DGS / Audio2Expression + ARTalk,WS 經 backend 代理)| 🚧 WS 串流與瀏覽器 WebGL 渲染整合中 |
+| W6 互動前端(語音全屏 / 打字雙布局聊天)| ✅ 文字對話 + 本人聲音已可用 |
 | W7 持有驗證 + 家族樹 | ✅ SIWE 通、family tree BFS 通 |
 | W8 整合測試 + demo | 🚧 端到端錄影中 |
 
-**雲端模式目前已經可以端到端 demo**:鑄造 → SIWE 登入 → 對話 → 自動播語音 → 手動生肖像 / 短片。
+**目前已可端到端 demo**:鑄造 → SIWE 登入 → 預構建 avatar/voice → 對話(Qwen3-14B 串流)→ 本人克隆聲音播放。
 
-下一階段重點是把離線訓練 pipeline 整合進來,讓「親身打造的記憶」也能 demo。
+下一階段重點是把 3DGS 說話頭的 WebGL 渲染與表情/頭姿同步打磨到順暢,並降低 TTS 句間延遲。
 
 ---
 
@@ -793,16 +777,17 @@ fal.ai Kling 一段 $0.25,每則 assistant 訊息都自動生會燒錢。語音(
 | **Irys** | Arweave 的快速通道,適合大檔上傳 |
 | **SIWE / EIP-4361** | 用錢包簽訊息登入(免 gas) |
 | **JWT** | 後端發給前端的 session token |
-| **LLM** | 大型語言模型(Claude / GPT) |
+| **LLM / Qwen3-14B** | 大型語言模型;我們在 render 機用 vLLM 跑開源 Qwen3-14B-AWQ |
 | **system prompt** | 給 LLM 的「你是誰、怎麼回」初始指令 |
-| **SSE** | 單向 HTTP 串流(server → client),用來逐字推送 LLM 回覆 |
-| **TTS** | 文字轉語音(ElevenLabs / OpenAI) |
-| **Diffusion / FLUX** | 文字生圖模型 |
-| **Kling** | 文字生短片模型(我們透過 fal.ai 用) |
-| **fal.ai** | 統一封裝多家 AI 模型的雲端 API 平台 |
-| **RAG** | 給 LLM 接一個外部知識庫的技術(離線模式用) |
-| **LoRA** | Diffusion 模型的微調方法,15-30 張照片就能學會一個人(離線模式用) |
-| **GPT-SoVITS** | 開源聲音複製模型(離線模式用) |
+| **render 渲染機** | 自家 RTX 5090 主機,Tailscale 內網 `:8012`,跑 LLM / TTS / 3DGS 說話頭,不出網 |
+| **Tailscale** | 把分散的機器組成一個私有內網的工具(讓 backend 安全連到 render 機) |
+| **WS / WebSocket** | 雙向串流,用來推文字 token + 每句的音檔/表情/頭姿(經 backend 代理) |
+| **IndexTTS2** | 開源 TTS,用本人錄音克隆音色,本機推理 |
+| **3DGS / 3D Gaussian Splatting** | 用高斯點雲表示 3D 場景的技術,瀏覽器 WebGL 可即時渲染 |
+| **LAM(aigc3d / Audio2Expression)** | 從單張照重建 3DGS 說話頭;從語音推 52 維 ARKit 表情 |
+| **ARTalk** | 從語音產生自然頭部姿態 |
+| **ARKit blendshape** | 把臉部表情拆成 52 個標準維度,用來驅動 avatar |
+| **聲音克隆** | 用本人錄音樣本讓 TTS 學會本人音色 |
 | **Prisma** | TypeScript 的 ORM |
 | **Fastify** | Node 的 HTTP server framework,比 Express 快 |
 | **Next.js / App Router** | React 的 SSR / 路由 framework |

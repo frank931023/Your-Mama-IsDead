@@ -16,10 +16,31 @@ import {
   type ChatTurn,
 } from "../cloud-persona.js";
 import { createComposeSessionToken, simliConfigured, SimliError } from "../lib/simli.js";
+import { reindexMemory, retrieveMemory, memoryCount, type MemoryHit } from "../lib/rag.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u),
 });
+
+/** cosine 距離大於此值的命中視為「不夠相關」丟掉 (e5 normalize 後,經驗閾值)。 */
+const MEMORY_MAX_DISTANCE = 0.62;
+
+/**
+ * 把檢索到的記憶片段組成一段可塞進 persona system prompt 的文字。
+ * 命中為空回 null (呼叫方就維持純 metadata 的 prompt)。
+ */
+function buildMemoryBlock(hits: MemoryHit[], name: string): string | null {
+  const relevant = hits.filter((h) => h.distance <= MEMORY_MAX_DISTANCE);
+  if (relevant.length === 0) return null;
+  const lines = relevant.map((h) => `- 「${h.text.replace(/\s+/g, " ").trim()}」`);
+  return [
+    "",
+    `--- ${name} 本人說過的話 (從生前對話紀錄檢索,供你參考語氣與內容) ---`,
+    "下面是與當前話題相關的真實片段。回答時請貼近這些話的語氣、用詞、立場;",
+    "若片段裡有具體事實就用上,但不要逐字照唸或硬湊;沒有相關片段時照常回答即可。",
+    ...lines,
+  ].join("\n");
+}
 
 function ensureCompute(reply: FastifyReply): string | null {
   if (!env.COMPUTE_URL) {
@@ -130,6 +151,131 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   // GET /api/personas/cloud-status — public; tells the frontend whether to
   // enable the cloud activation card in the modal.
   app.get("/cloud-status", async () => cloudProviderStatus());
+
+  // GET /api/personas/:tokenId/persona-prompt — auth + owner. 回传该 persona 的
+  // system prompt。LAM 渲染机的 WS /render 是 persona-agnostic (不会自动注入人设),
+  // 前端在 LAM 模式下要自己把这段 system prompt 放进 messages[0]。这与后端
+  // cloud-chat 用的是同一份 buildPersonaSystemPrompt,保证两条路径人设一致。
+  // 帶 ?q=<使用者本輪問題> 時,會用它對該 persona 的記憶索引 (對話紀錄向量庫)
+  // 做 RAG 檢索,把命中的逝者真實語料片段附加在 system prompt 後面。沒帶 q、
+  // 沒有索引、或檢索不到夠相關的片段時,就回純 metadata 的 prompt (行為同舊版)。
+  // 前端 LAM 模式每輪對話帶上 q,即可做到「每輪用問題檢索」的真 RAG。
+  app.get(
+    "/:tokenId/persona-prompt",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const tokenId = BigInt(params.data.tokenId);
+      const tablet = await prisma.tablet.findUnique({ where: { tokenId } });
+      if (!tablet) return reply.code(404).send({ error: "tablet_not_synced" });
+      const metadata = tablet.metadataJson as TabletMetadata | null;
+      if (!metadata) return reply.code(409).send({ error: "metadata_unavailable" });
+
+      let prompt = buildPersonaSystemPrompt(metadata);
+      let memoryUsed = 0;
+
+      const q = (request.query as { q?: unknown })?.q;
+      if (typeof q === "string" && q.trim()) {
+        try {
+          const total = await memoryCount(tokenId);
+          const hits = await retrieveMemory(tokenId, q, 4);
+          const name = metadata.dsas.deceased?.name || metadata.name || "他";
+          const passed = hits.filter((h) => h.distance <= MEMORY_MAX_DISTANCE);
+          const block = buildMemoryBlock(hits, name);
+          if (block) {
+            prompt += `\n${block}`;
+            memoryUsed = passed.length;
+          }
+          // ── RAG 可觀測性:在後端 console 印出本輪檢索實況 ──────────────────
+          // grep "[RAG]" 看每一輪:查詢、索引總數、命中片段+距離、是否注入。
+          request.log.info(
+            {
+              tokenId: tokenId.toString(),
+              query: q,
+              indexedChunks: total,
+              threshold: MEMORY_MAX_DISTANCE,
+              injected: memoryUsed,
+              hits: hits.map((h) => ({
+                dist: Number(h.distance.toFixed(3)),
+                pass: h.distance <= MEMORY_MAX_DISTANCE,
+                text: h.text.replace(/\s+/g, " ").slice(0, 60),
+              })),
+            },
+            `[RAG] token#${tokenId} q="${q.slice(0, 40)}" → indexed=${total} injected=${memoryUsed}/${hits.length}`,
+          );
+          if (total === 0) {
+            request.log.warn(
+              { tokenId: tokenId.toString() },
+              `[RAG] token#${tokenId} 索引為空 — 還沒上傳對話紀錄 / 還沒 reindex,本輪用純 metadata persona`,
+            );
+          }
+        } catch (err) {
+          // RAG 失敗不該擋住對話 — 降級成純 metadata prompt。
+          request.log.warn({ err, tokenId: tokenId.toString() }, "[RAG] retrieval failed, fallback to base prompt");
+        }
+      } else {
+        request.log.info({ tokenId: tokenId.toString() }, `[RAG] token#${tokenId} 本輪無 query (前端沒帶 ?q=) — 純 metadata persona`);
+      }
+
+      return reply.send({ prompt, memoryUsed });
+    },
+  );
+
+  // POST /api/personas/:tokenId/reindex-memory — auth + owner. 重建該 persona 的
+  // 記憶索引 (拉 chatlogs → 解析 → 切片 → embed → 存 pgvector)。前端在「保存上鏈」
+  // 成功 + sync 後呼叫一次即可。冪等:重跑會先清舊再建。可能要跑幾秒~幾十秒
+  // (首次會下載 embedding 模型)。
+  app.post(
+    "/:tokenId/reindex-memory",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const tokenId = BigInt(params.data.tokenId);
+      const tablet = await prisma.tablet.findUnique({ where: { tokenId } });
+      if (!tablet) return reply.code(404).send({ error: "tablet_not_synced" });
+      const metadata = tablet.metadataJson as TabletMetadata | null;
+      if (!metadata) return reply.code(409).send({ error: "metadata_unavailable" });
+      try {
+        const t0 = Date.now();
+        const result = await reindexMemory(tokenId, metadata);
+        request.log.info(
+          { ...result, ms: Date.now() - t0 },
+          `[RAG] reindex token#${tokenId}: chatlogs=${result.chatlogsProcessed} 片段=${result.piecesIndexed} skipped=${result.skipped.length} (${((Date.now() - t0) / 1000).toFixed(1)}s)`,
+        );
+        if (result.piecesIndexed === 0) {
+          request.log.warn(
+            { tokenId: tokenId.toString(), skipped: result.skipped },
+            `[RAG] reindex token#${tokenId} 索引了 0 段 — 可能沒上傳對話紀錄,或逝者名字對不上 chatlog 裡的發話者 (檢查 metadata.deceased.name 與對話檔裡的名字)`,
+          );
+        }
+        return reply.send(result);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "reindex_failed";
+        request.log.error({ err, tokenId: tokenId.toString() }, "[RAG] reindex-memory failed");
+        return reply.code(500).send({ error: "reindex_failed", detail });
+      }
+    },
+  );
+
+  // GET /api/personas/:tokenId/memory-status — auth + owner. 回傳目前索引了幾段記憶。
+  app.get(
+    "/:tokenId/memory-status",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const tokenId = BigInt(params.data.tokenId);
+      try {
+        const count = await memoryCount(tokenId);
+        return reply.send({ tokenId: tokenId.toString(), chunks: count });
+      } catch (err) {
+        request.log.error({ err }, "memory-status failed");
+        return reply.code(500).send({ error: "memory_status_failed" });
+      }
+    },
+  );
 
   // POST /api/personas/:tokenId/cloud-chat — auth + owner; SSE token stream.
   app.post(

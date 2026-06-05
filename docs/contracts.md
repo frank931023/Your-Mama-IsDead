@@ -90,7 +90,5 @@ forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast
 The deployed address must be set in:
 - `backend/.env` → `CONTRACT_ADDRESS`
 - `frontend/.env.local` → `NEXT_PUBLIC_CONTRACT_ADDRESS`
-- `compute/.env` → `CONTRACT_ADDRESS`
-- `training/.env` → `CONTRACT_ADDRESS`
 
 (or root `.env` if all services share it via `dotenv -e ../.env`)

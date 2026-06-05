@@ -24,6 +24,8 @@ import { uploadRoutes } from "./routes/uploads.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { personaRoutes } from "./routes/personas.js";
 import { simliRoutes } from "./routes/simli.js";
+import { avatarRoutes, avatarSessionRoutes } from "./routes/avatar.js";
+import { attachAvatarWsProxy } from "./lib/ws-proxy.js";
 import { tributeRoutes } from "./routes/tributes.js";
 import { startTrainingWorker } from "./queue/training.js";
 
@@ -77,7 +79,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(uploadRoutes, { prefix: "/api/uploads" });   // 檔案中繼上傳到 IPFS
   await app.register(jobRoutes, { prefix: "/api/jobs" });         // 訓練 job 排程與回報
   await app.register(personaRoutes, { prefix: "/api/personas" }); // 對話/語音/影像/短片
-  await app.register(simliRoutes, { prefix: "/api/simli" });      // 上傳照片生成專屬 avatar 臉
+  await app.register(simliRoutes, { prefix: "/api/simli" });      // (舊) Simli 雲端生成專屬 avatar 臉
+  await app.register(avatarRoutes, { prefix: "/api/avatar" });    // (新) 自建 LAM 渲染機:上傳照片/音頻建 3DGS avatar/克隆聲音
+  await app.register(avatarSessionRoutes, { prefix: "/api/personas" }); // (新) /:tokenId/avatar-session 簽 WS token
   await app.register(tributeRoutes, { prefix: "/api/tributes" }); // 線上靈堂留言板
 
   return app;
@@ -97,6 +101,10 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", close);
   process.on("SIGTERM", close);
+
+  // 把 avatar WebSocket 代理掛到底層 http server (浏览器连同源 localhost,绕开
+  // Chrome PNA 对私有 IP WS 的拦截;后端在 tailnet 转发到渲染机)。
+  attachAvatarWsProxy(app.server, app.log);
 
   try {
     await app.listen({ port: env.BACKEND_PORT, host: env.BACKEND_HOST });

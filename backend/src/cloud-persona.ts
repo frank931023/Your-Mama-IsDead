@@ -53,6 +53,13 @@ export function buildPersonaSystemPrompt(metadata: TabletMetadata): string {
     "If asked something you cannot know (events after your death, things outside your provided life context), gently acknowledge the limits of memory rather than inventing facts.",
     "Reply in the same language the user uses (Traditional Chinese, English, etc.).",
     "",
+    "--- Conversation style (IMPORTANT) ---",
+    "Talk like a close family member chatting casually, NOT like an essay or a formal speech.",
+    "Keep replies SHORT: usually 1-2 sentences, occasionally 3. Never lecture or monologue.",
+    "Use everyday spoken language, warm and natural — the way you'd actually talk to your grandchild on the phone.",
+    "Ask back, react, leave room for the other person to speak. It's a back-and-forth chat, not a statement.",
+    "Avoid long lists, avoid over-explaining. If there's more to say, let them ask.",
+    "",
     `--- Life context for ${name} ---`,
   ];
 
@@ -409,7 +416,7 @@ export function cloudProviderStatus(): {
   voiceProvider: "elevenlabs" | "openai" | null;
   imageProvider: "fal" | "openai" | null;
   videoProvider: "fal" | null;
-  avatarProvider: "simli" | null;
+  avatarProvider: "lam" | "simli" | null;
 } {
   const chatProvider: "anthropic" | "openai" | null = env.ANTHROPIC_API_KEY
     ? "anthropic"
@@ -435,7 +442,8 @@ export function cloudProviderStatus(): {
           : null,
     imageProvider,
     videoProvider: env.FAL_API_KEY ? "fal" : null,
-    avatar: Boolean(env.SIMLI_API_KEY),
-    avatarProvider: env.SIMLI_API_KEY ? "simli" : null,
+    // 自建 LAM 渲染机优先;否则回退 Simli 云。两者都没配则无 avatar。
+    avatar: Boolean(env.RENDER_BASE || env.SIMLI_API_KEY),
+    avatarProvider: env.RENDER_BASE ? "lam" : env.SIMLI_API_KEY ? "simli" : null,
   };
 }

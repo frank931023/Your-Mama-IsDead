@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 = 官方 postgres:16 + 預裝 pgvector 擴充 (RAG 向量檢索用)。
+    # 與既有資料完全相容,只是多了 `CREATE EXTENSION vector` 的能力。
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: dsas
       POSTGRES_PASSWORD: dsas
@@ -22,14 +24,6 @@ services:
     volumes:
       - redis-data:/data
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant-data:/qdrant/storage
-
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -45,5 +39,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  qdrant-data:
   minio-data:

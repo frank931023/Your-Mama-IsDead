@@ -77,9 +77,19 @@ export interface Consent {
  * faceId。`status` 留下生成當下的狀態快照供前端參考,非權威。
  */
 export interface AvatarConfig {
+  /** @deprecated Simli 雲端 faceId。改用自建 LAM 渲染機後保留以相容舊資料。 */
   simliFaceId?: string;
-  /** 生成提交當下 Simli 回報的狀態 (e.g. "pending" | "completed")，僅供參考。 */
+  /** 生成提交當下回報的狀態 (e.g. "pending" | "completed")，僅供參考。 */
   status?: string;
+
+  // ── 自建 LAM 渲染機 (YMID-RENDER-API) ──────────────────────────────
+  /** LAM avatar 的 label (渲染機 /upload_avatar 回傳)，聊天開 WS 時用。 */
+  avatarLabel?: string;
+  /** LAM 導出的 3DGS avatar zip 的可下載 URL (渲染機 /static/avatars/<label>.zip
+   *  的絕對位址)，前端 WebGL 渲染器載入用。 */
+  avatarUrl?: string;
+  /** 克隆聲音的 label (渲染機 /upload_voice 回傳)，聊天 TTS 用。 */
+  voiceLabel?: string;
 }
 
 export interface DSASExtension {

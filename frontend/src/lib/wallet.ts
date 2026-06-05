@@ -245,6 +245,34 @@ export function useSetArtifactURI(tokenId: bigint | string | number): {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Scenario #3b — update tokenURI (補傳:重組 metadata → pin IPFS → 上鏈更新)
+// 合約 setTokenURI(tokenId, uri) 允許 owner 或 MINTER 更新基礎 metadata URI。
+// 用於鑄造後補傳生平/照片/影音/子孫/對話紀錄/克隆聲音 label。
+// ────────────────────────────────────────────────────────────────────────────
+
+export function useSetTokenURI(tokenId: bigint | string | number): {
+  setTokenURI: (uri: string) => Promise<Hex>;
+  isPending: boolean;
+  error: Error | null;
+} {
+  const { writeContractAsync, isPending, error } = useWriteContract();
+
+  const setTokenURI = useCallback(
+    async (uri: string): Promise<Hex> => {
+      return writeContractAsync({
+        abi: DIGITAL_TABLET_ABI,
+        address: CONTRACT_ADDRESS,
+        functionName: "setTokenURI",
+        args: [BigInt(tokenId), uri],
+      });
+    },
+    [writeContractAsync, tokenId],
+  );
+
+  return { setTokenURI, isPending, error: (error as Error | null) ?? null };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Scenario #4 — derive E2E encryption key (EIP-712 → HKDF)
 // ────────────────────────────────────────────────────────────────────────────
 

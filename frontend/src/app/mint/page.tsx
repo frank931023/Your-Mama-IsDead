@@ -32,7 +32,7 @@ import { useError } from "@/components/ErrorDialog";
 import { useMintTablet, useSiweLogin } from "@/lib/wallet";
 import {
   uploadRelay,
-  generateSimliFace,
+  generateLamAvatar,
   getCloudStatus,
   ApiError,
   type UploadedAsset,
@@ -87,8 +87,12 @@ interface DraftMedia {
 }
 
 interface DraftAvatar {
-  /** 用大頭照生成的 Simli 專屬 faceId;空著代表還沒生成 / 生成失敗 (聊天時用預設臉)。 */
+  /** @deprecated Simli 雲端 faceId (舊路徑)。 */
   simliFaceId?: string;
+  /** 自建 LAM 渲染機回傳的 avatar label。 */
+  avatarLabel?: string;
+  /** LAM 導出的 3DGS zip 相對 URL (e.g. /static/avatars/<label>.zip)。 */
+  avatarUrl?: string;
   status?: string;
   /** 記下生成時用的大頭照 uri,大頭照換掉時用來判斷要不要重生成。 */
   sourcePortraitUri?: string;
@@ -268,10 +272,12 @@ function MintFlow(): React.ReactElement {
         descendants: descendants.length > 0 ? descendants : undefined,
         assets,
         consent: draft.consent ?? undefined,
-        ...(draft.avatar.simliFaceId
+        ...(draft.avatar.avatarLabel || draft.avatar.simliFaceId
           ? {
               avatar: {
-                simliFaceId: draft.avatar.simliFaceId,
+                ...(draft.avatar.avatarLabel ? { avatarLabel: draft.avatar.avatarLabel } : {}),
+                ...(draft.avatar.avatarUrl ? { avatarUrl: draft.avatar.avatarUrl } : {}),
+                ...(draft.avatar.simliFaceId ? { simliFaceId: draft.avatar.simliFaceId } : {}),
                 ...(draft.avatar.status ? { status: draft.avatar.status } : {}),
               },
             }
@@ -490,7 +496,13 @@ function MediaStep({
               // 換了大頭照就清掉舊的 faceId,讓使用者用新照片重新生成。
               const next = portrait[0]?.uri;
               if (next !== avatar.sourcePortraitUri) {
-                updateAvatar({ simliFaceId: undefined, status: undefined, sourcePortraitUri: undefined });
+                updateAvatar({
+                  avatarLabel: undefined,
+                  avatarUrl: undefined,
+                  simliFaceId: undefined,
+                  status: undefined,
+                  sourcePortraitUri: undefined,
+                });
               }
             }}
           />
@@ -612,9 +624,15 @@ function AvatarFaceGenerator({
     };
   }, []);
 
-  if (available === false) return null; // Simli 未設定,靜默隱藏
+  if (available === false) return null; // 渲染機未設定,靜默隱藏
 
-  const generated = Boolean(avatar.simliFaceId) && avatar.sourcePortraitUri === portraitUri;
+  const generated = Boolean(avatar.avatarLabel) && avatar.sourcePortraitUri === portraitUri;
+
+  // 從大頭照 uri 派生一個安全 label ([A-Za-z0-9_-])。換照片 → 換 label → 重生成。
+  const deriveLabel = (uri: string): string => {
+    const tail = uri.replace(/[^A-Za-z0-9]/g, "").slice(-16) || "anon";
+    return `dsas_${tail}`;
+  };
 
   const generate = async (): Promise<void> => {
     if (!portraitUri) return;
@@ -623,37 +641,37 @@ function AvatarFaceGenerator({
       const res = await fetch(ipfsToHttps(portraitUri));
       if (!res.ok) throw new Error(`無法讀取大頭照 (${res.status})`);
       const blob = await res.blob();
+      const label = deriveLabel(portraitUri);
 
-      // Obtain a JWT and call the backend. The cached `token` may be a STALE
-      // string (JWT TTL is ~1h) — `token ?? login()` can't tell a valid token
-      // from an expired one, so it would happily send the dead token and get a
-      // 401 *without ever prompting a re-sign*. So: try the cached token first,
-      // and on 401 drop it, force a fresh SIWE login, and retry once.
-      const callWith = async (jwt: string): Promise<Awaited<ReturnType<typeof generateSimliFace>>> => {
-        setState({ status: "working", message: "生成數位分身中……" });
-        return generateSimliFace(blob, jwt);
+      // 取 JWT 調後端。token 可能是過期字串 (TTL ~1h),`token ?? login()` 分不出
+      // 有效 vs 過期 → 會帶死 token 拿 401 卻不重簽。所以:先試快取 token,401 就
+      // 清掉重新 SIWE 登入再重試一次。
+      // 注意:LAM 重建會阻塞約 100 秒 (渲染機跑 3DGS reconstruction)。
+      const callWith = async (jwt: string): Promise<Awaited<ReturnType<typeof generateLamAvatar>>> => {
+        setState({ status: "working", message: "生成 3D 數位分身中(約需 1–2 分鐘,請稍候)……" });
+        return generateLamAvatar(blob, label, jwt);
       };
 
-      let face;
+      let result;
       try {
         setState({ status: "working", message: "驗證身分……" });
         const jwt = token ?? (await login());
-        face = await callWith(jwt);
+        result = await callWith(jwt);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
-          // Stale/invalid token → clear it and sign in fresh, then retry once.
           logout();
           setState({ status: "working", message: "請在錢包中簽署登入……" });
           const jwt = await login();
-          face = await callWith(jwt);
+          result = await callWith(jwt);
         } else {
           throw err;
         }
       }
 
       updateAvatar({
-        simliFaceId: face.faceId,
-        status: face.status,
+        avatarLabel: result.label,
+        avatarUrl: result.url,
+        status: "completed",
         sourcePortraitUri: portraitUri,
       });
       setState({ status: "idle" });

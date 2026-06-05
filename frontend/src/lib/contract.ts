@@ -62,6 +62,16 @@ export const DIGITAL_TABLET_ABI = [
   },
   {
     type: "function",
+    name: "setTokenURI",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "uri", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "ownerOf",
     stateMutability: "view",
     inputs: [{ name: "tokenId", type: "uint256" }],
@@ -130,7 +140,11 @@ export type DigitalTabletReadFn =
   | "isRoot"
   | "isLeaf";
 
-export type DigitalTabletWriteFn = "mintRoot" | "safeMintWithParent" | "setArtifactURI";
+export type DigitalTabletWriteFn =
+  | "mintRoot"
+  | "safeMintWithParent"
+  | "setArtifactURI"
+  | "setTokenURI";
 
 interface ReadOpts {
   functionName: DigitalTabletReadFn;

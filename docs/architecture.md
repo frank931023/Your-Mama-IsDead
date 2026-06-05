@@ -7,80 +7,59 @@ flowchart TB
         Browser[Browser]
     end
 
-    subgraph Frontend["frontend/ — Next.js"]
+    subgraph Frontend["frontend/ — Next.js 14"]
         UI[Mint / Tablet / Chat / Lineage]
         WagmiHook[wagmi + RainbowKit]
     end
 
-    subgraph Backend["backend/ — Fastify"]
-        AuthSvc[SIWE Auth]
+    subgraph Backend["backend/ — Fastify + TS"]
+        AuthSvc[SIWE Auth + JWT]
         TabletAPI[Tablet API]
-        UploadAPI[Upload Relay]
-        JobAPI[Training Jobs]
-        Proxy[Persona Proxy]
+        UploadAPI[Upload Relay → Pinata]
+        BuildAPI[Avatar / Voice Build]
+        WSProxy[WS Proxy<br/>/api/avatar/ws]
+        Persona[Persona Prompt Builder]
+        RenderJWT[HS256 Render JWT signer]
         DB[(Postgres / Prisma)]
-        Queue[(Redis / BullMQ)]
     end
 
-    subgraph Compute["compute/ — FastAPI"]
-        PersonaAPI[Persona Endpoints]
-        Cache[Persona LRU Cache]
-        RAG[RAG Engine]
-        LoRA[LoRA Runner]
-        TTS[TTS Runner]
-        LLM[LLM Client]
+    subgraph Render["render machine — RTX 5090 (Tailscale 100.122.149.34:8012)"]
+        vLLM[vLLM · Qwen3-14B-AWQ]
+        TTS[IndexTTS2 voice clone]
+        A2E[LAM Audio2Expression + ARTalk]
+        AvatarBuild[3DGS avatar builder<br/>LAM aigc3d]
     end
 
     subgraph Storage["storage/ — Provider Abstraction"]
         Pinata[Pinata IPFS]
-        Web3Storage[web3.storage]
-        Irys[Irys → Arweave]
-        Local[Local FS]
+        Arweave[Arweave · future]
     end
 
     subgraph Chain["contracts/ — Sepolia"]
         NFT[DigitalTablet<br/>ERC-721 + ERC-6150]
     end
 
-    subgraph Training["training/ — Offline GPU"]
-        P1[01_fetch_assets]
-        P2[02_caption_images]
-        P3[03_train_lora]
-        P4[04_train_voice]
-        P5[05_build_rag]
-        P6[06_package]
-        P7[07_upload]
-    end
-
     Wallet --> WagmiHook
     Browser --> UI
     UI --> WagmiHook
-    WagmiHook -- "mint / setArtifactURI" --> NFT
-    UI -- "fetch / chat / mint" --> Backend
-    UI -- "presign / direct upload" --> Pinata
+    WagmiHook -- "mint / setTokenURI / setArtifactURI" --> NFT
+    UI -- "fetch / chat / build" --> Backend
+    UI == "WS /api/avatar/ws" ==> WSProxy
 
     AuthSvc -- "ownerOf" --> NFT
     TabletAPI -- "tokenURI / parent / children" --> NFT
-    TabletAPI -- "metadata JSON" --> Pinata
-    UploadAPI --> Pinata
-    Proxy --> PersonaAPI
-
-    JobAPI --> Queue
-    JobAPI --> DB
+    TabletAPI -- "metadata JSON (merge + pin)" --> Pinata
     TabletAPI --> DB
+    UploadAPI --> Pinata
+    AuthSvc -- "issues short-lived" --> RenderJWT
+    RenderJWT -. "aud=ymid-render token" .-> UI
 
-    PersonaAPI --> Cache
-    Cache -- "manifest URI" --> NFT
-    Cache -- "lora / voice / rag files" --> Pinata
-    PersonaAPI --> RAG
-    PersonaAPI --> LoRA
-    PersonaAPI --> TTS
-    RAG --> LLM
-
-    P1 -- "tokenURI + assets" --> NFT
-    P1 -- "download" --> Pinata
-    P7 -- "upload" --> Pinata
-    P7 -- "setArtifactURI" --> NFT
+    BuildAPI -- "/upload_avatar" --> AvatarBuild
+    BuildAPI -- "/upload_voice" --> TTS
+    WSProxy == "/render?token=jwt" ==> vLLM
+    vLLM --> TTS
+    TTS --> A2E
+    AvatarBuild -. "3DGS zip" .-> Storage
 ```
 
 ## Layer Boundaries
@@ -89,14 +68,14 @@ flowchart TB
 |---|---|---|---|
 | Identity (chain) | NFT ownership, family tree, artifact pointers | Nothing | Source of truth for ownership |
 | Storage | Bytes addressed by CID | Provider's persistence guarantees | IPFS for prototype; Arweave swap = driver change |
-| Compute | Inference only | Chain + storage for inputs | Stateless except LRU cache |
-| Backend | Off-chain cache, session, jobs | Chain + compute + storage | Thin orchestration |
-| Frontend | UX | Backend + chain (read) + storage (direct upload) | Wallet is the auth primitive |
-| Training | Offline artifact production | Chain + storage | Runs on user's GPU, never on the server |
+| Render machine | Inference only (LLM / TTS / expression / avatar build) | Backend-signed JWT for every request | Self-hosted on Tailscale; **stateless & persona-agnostic** |
+| Backend | Off-chain cache, session, persona prompts, JWT signing | Chain + render + storage | Thin orchestration; sole holder of `RENDER_JWT_SECRET` |
+| Frontend | UX | Backend + chain (read) + storage | Wallet is the auth primitive; talks to render only via backend WS proxy |
 
 ## Trust & Ownership Invariants
 
-1. **NFT ownership = data sovereignty.** The wallet that owns the NFT is the only authority that can update `artifactURI` or mint descendants.
+1. **NFT ownership = data sovereignty.** The wallet that owns the NFT is the only authority that can update `tokenURI` / `artifactURI` or mint descendants.
 2. **Storage is content-addressed.** A CID change = a new artifact version, not a mutation. Old versions remain pinned until the user unpins.
-3. **The compute service caches but never owns.** All artifacts are reproducible from chain + storage; cache loss is recoverable.
-4. **Training is user-controlled.** The backend never touches private keys for `setArtifactURI`; the user signs that transaction from their offline training machine using `TRAINER_PRIVATE_KEY`.
+3. **The render machine is stateless & persona-agnostic.** It holds no per-deceased state; the backend sends the full `messages` array every turn, so persona, RAG, and memory changes touch only the backend. Inference is reproducible from chain + storage.
+4. **Artifact updates are owner-signed.** The backend never touches private keys. The owner signs `setTokenURI(tokenId, newUri)` from their wallet on the tablet page when adding or re-uploading assets (生平 / 照片 / 影音 / 子孫 / 對話紀錄), and the backend merges (never replaces) into the existing metadata before re-pinning.
+5. **Render auth is backend-mediated.** The browser never talks to the render machine directly (Chrome Private Network Access blocks localhost → private-IP WS). Backend ↔ render uses a shared-secret HS256 JWT (`aud=ymid-render`, TTL ~1800s); the frontend only ever receives a short-lived signed token.

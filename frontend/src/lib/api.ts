@@ -143,12 +143,157 @@ export interface CloudStatus {
   voiceProvider: "elevenlabs" | "openai" | null;
   imageProvider: "fal" | "openai" | null;
   videoProvider: "fal" | null;
-  avatarProvider: "simli" | null;
+  avatarProvider: "lam" | "simli" | null;
 }
 
 export async function getCloudStatus(): Promise<CloudStatus> {
   const res = await fetch(`${BACKEND_URL}/api/personas/cloud-status`, { cache: "no-store" });
   return handle<CloudStatus>(res);
+}
+
+/**
+ * 取该 persona 的 system prompt(LAM 模式要前端自带塞进 messages[0])。
+ * 带 query 时后端会用它对该 persona 的对话纪录记忆库做 RAG 检索,把命中的
+ * 逝者真实语料附加到 prompt 里(真 RAG:每轮用问题检索)。回 { prompt, memoryUsed }。
+ */
+export async function fetchPersonaPrompt(
+  tokenId: string | number,
+  jwt: string,
+  query?: string,
+): Promise<{ prompt: string; memoryUsed: number }> {
+  const qs = query && query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/persona-prompt${qs}`, {
+    headers: authHeaders(jwt),
+    cache: "no-store",
+  });
+  const data = await handle<{ prompt: string; memoryUsed?: number }>(res);
+  return { prompt: data.prompt, memoryUsed: data.memoryUsed ?? 0 };
+}
+
+/** RAG 索引重建结果。 */
+export interface ReindexResult {
+  tokenId: string;
+  chatlogsProcessed: number;
+  piecesIndexed: number;
+  skipped: string[];
+}
+
+/**
+ * 重建该 persona 的记忆索引(拉对话纪录 → 切片 → embed → 存向量库)。
+ * owner 在塔位页补传对话纪录、保存上链 + sync 后调一次。可能要几秒~几十秒。
+ */
+export async function reindexMemory(
+  tokenId: string | number,
+  jwt: string,
+): Promise<ReindexResult> {
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/reindex-memory`, {
+    method: "POST",
+    headers: authHeaders(jwt),
+  });
+  return handle<ReindexResult>(res);
+}
+
+/** 查该 persona 目前索引了几段记忆。 */
+export async function fetchMemoryStatus(
+  tokenId: string | number,
+  jwt: string,
+): Promise<{ tokenId: string; chunks: number }> {
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/memory-status`, {
+    headers: authHeaders(jwt),
+    cache: "no-store",
+  });
+  return handle<{ tokenId: string; chunks: number }>(res);
+}
+
+// ── 自建 LAM 渲染机 (YMID-RENDER-API) ────────────────────────────────────────
+
+/** 上传照片 → 渲染机 LAM 重建 3DGS avatar 的结果。 */
+export interface LamAvatarResult {
+  label: string;
+  /** 渲染机上的相对路径, e.g. /static/avatars/<label>.zip */
+  url: string;
+  took_sec?: number;
+  size?: number;
+}
+
+/**
+ * 上传逝者照片到后端 → 后端代理给 LAM 渲染机重建 3DGS avatar。
+ * 注意:渲染机 LAM 重建会阻塞约 100s,这个请求要给足超时(用 XHR 控制)。
+ * 回传 { label, url } —— 写进 metadata.dsas.avatar.{avatarLabel,avatarUrl}。
+ */
+export async function generateLamAvatar(
+  image: File | Blob,
+  label: string,
+  jwt: string,
+): Promise<LamAvatarResult> {
+  const form = new FormData();
+  form.append("label", label);
+  const name = image instanceof File ? image.name : "portrait.jpg";
+  form.append("file", image, name);
+  const res = await fetch(`${BACKEND_URL}/api/avatar/build`, {
+    method: "POST",
+    headers: authHeaders(jwt), // 不手动设 Content-Type,让浏览器带 multipart boundary
+    body: form,
+  });
+  return handle<LamAvatarResult>(res);
+}
+
+/** 克隆声音 (渲染机 /upload_voice) 的结果。 */
+export interface ClonedVoiceResult {
+  /** 声音 profile 的 label，写进 metadata.dsas.avatar.voiceLabel，聊天 TTS 用。 */
+  label: string;
+  /** 渲染机上的相对路径, e.g. /static/voices/<label>.pt */
+  path: string;
+  size?: number;
+}
+
+/**
+ * 上传一段逝者音频到后端 → 后端代理给渲染机用 IndexTTS2 克隆声音 profile。
+ * 仿照 generateLamAvatar:multipart `file` + `label`,需 SIWE jwt (Authorization Bearer)。
+ * 回传 { label, path } —— 把 label 写进 metadata.dsas.avatar.voiceLabel。
+ */
+export async function generateClonedVoice(
+  audio: File | Blob,
+  label: string,
+  jwt: string,
+): Promise<ClonedVoiceResult> {
+  const form = new FormData();
+  form.append("label", label);
+  const name = audio instanceof File ? audio.name : "voice.wav";
+  form.append("file", audio, name);
+  const res = await fetch(`${BACKEND_URL}/api/avatar/build-voice`, {
+    method: "POST",
+    headers: authHeaders(jwt), // 不手动设 Content-Type,让浏览器带 multipart boundary
+    body: form,
+  });
+  return handle<ClonedVoiceResult>(res);
+}
+
+/** 后端签发的、开 WS 直连渲染机所需的信息。 */
+export interface AvatarSession {
+  /** ws(s)://host/render?token=<jwt> */
+  wsUrl: string;
+  token: string;
+  /** 渲染机 http base,下载 avatar zip 用 */
+  renderBase: string;
+  voice?: string;
+  avatar?: string;
+  /** 3DGS avatar zip 完整可下载 URL;avatar 未生成时为 undefined。 */
+  avatarUrl?: string;
+  ttlSec: number;
+}
+
+/** 取得该 tablet 的实时对话 WS 会话信息(后端鉴权 + 签短期 render token)。 */
+export async function fetchAvatarSession(
+  tokenId: string | number,
+  jwt: string,
+): Promise<AvatarSession> {
+  const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/avatar-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(jwt) },
+    body: "{}",
+  });
+  return handle<AvatarSession>(res);
 }
 
 export interface SimliSession {

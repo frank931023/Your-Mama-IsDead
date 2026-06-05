@@ -3,12 +3,14 @@
 // plus training-job lifecycle and SIWE session storage.
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 enum JobStatus {
@@ -82,4 +84,27 @@ model Tribute {
 
   @@index([tokenId])
   @@index([createdAt])
+}
+
+/// RAG 記憶片段:逝者對話紀錄 (chatlogs) 切片後的向量索引。
+/// 每輪對話用使用者問題 embedding 對這裡做相似度檢索,取 top-k 拼進 persona prompt,
+/// 讓回答有逝者本人真實語料佐證 (而不只是 LLM 根據 metadata 腦補)。
+///
+/// embedding 是 multilingual-e5-small 的 384 維向量。Prisma 不原生支援 pgvector,
+/// 故用 Unsupported 宣告該欄;寫入 / 相似度查詢都走 $executeRaw / $queryRaw。
+/// sourceUri = 來源 chatlog 的 ipfs uri;重建索引時先依 tokenId 刪舊再插新。
+model MemoryChunk {
+  id         String                      @id @default(cuid())
+  tokenId    BigInt
+  text       String                      @db.Text
+  /// 來源 chatlog 的 ipfs uri (重建 / 除錯用)
+  sourceUri  String
+  /// 來源平台 (line/telegram/...) — 檢索結果標註用
+  platform   String?
+  /// 片段裡的發話者 (通常是逝者本人) — 過濾用
+  speaker    String?
+  embedding  Unsupported("vector(384)")?
+  createdAt  DateTime                    @default(now())
+
+  @@index([tokenId])
 }
