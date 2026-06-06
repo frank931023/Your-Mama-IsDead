@@ -390,6 +390,9 @@ export default function TabletDetailPage(): React.ReactElement {
         ? { ...built, dsas: { ...built.dsas, avatar: mergedAvatar } }
         : built;
 
+      // [DEBUG] 確認上鏈前 metadata 真的帶上 biography/epitaph (排查「保存後看不到生平」)。
+      console.log("[SAVE] draft.bio=", JSON.stringify(draft.bio), "→ metadata.dsas.deceased=", JSON.stringify(metadata.dsas.deceased));
+
       // 7. pin metadata JSON 到 IPFS。
       const file = new File(
         [JSON.stringify(metadata, null, 2)],

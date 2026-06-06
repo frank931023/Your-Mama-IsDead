@@ -76,7 +76,7 @@ function Pillars(): React.ReactElement {
     {
       icon: Cpu,
       title: "AI 記憶互動",
-      subtitle: "RAG · LoRA · TTS",
+      subtitle: "RAG · 聲音克隆 · 3D 對話人像",
       desc:
         "透過 AI 重現熟悉的聲音、語氣與對話，讓思念得以再次被聽見。",
     },
