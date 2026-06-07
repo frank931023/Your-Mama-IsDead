@@ -15,10 +15,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   useAccount,
   useChainId,
+  useConfig,
   useSignMessage,
   useSignTypedData,
   useWriteContract,
 } from "wagmi";
+import { waitForTransactionReceipt } from "wagmi/actions";
 import type { Address, Hex } from "viem";
 
 import { CONTRACT_ADDRESS, DIGITAL_TABLET_ABI } from "./contract";
@@ -270,6 +272,27 @@ export function useSetTokenURI(tokenId: bigint | string | number): {
   );
 
   return { setTokenURI, isPending, error: (error as Error | null) ?? null };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 等交易上鏈確認 (給 tablet-save 用,避免送出後馬上 sync 讀到舊鏈上狀態)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 回傳一個 waitForReceipt(hash):等該交易被打包確認後才 resolve。
+ *
+ * wagmi 的 writeContractAsync 只回 hash 就 resolve,不等上鏈。送出後若馬上讀鏈
+ * (例如 syncTablet → getTokenURI) 會讀到舊值。把這個傳進 buildAndSaveTabletMetadata
+ * 的 waitForReceipt,就能在 sync 前先等確認。
+ */
+export function useWaitForReceipt(): (hash: Hex) => Promise<void> {
+  const config = useConfig();
+  return useCallback(
+    async (hash: Hex): Promise<void> => {
+      await waitForTransactionReceipt(config, { hash });
+    },
+    [config],
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -21,6 +21,18 @@ enum JobStatus {
   FAILED
 }
 
+/// 哀悼版 story 的審核狀態。
+///   PENDING  訪客/屋主剛投稿,待屋主策展
+///   APPROVED 屋主核可,可進下一次上鏈批次
+///   REJECTED 屋主隱藏 (留在 DB,永不公開、永不上鏈)
+///   ONCHAIN  已被某次 setTokenURI 快照收錄 (dedup guard)
+enum StoryStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ONCHAIN
+}
+
 model Tablet {
   tokenId       BigInt        @id
   owner         String
@@ -28,6 +40,9 @@ model Tablet {
   tokenURI      String
   artifactURI   String?
   metadataJson  Json?
+  /// 是否公開列在公開總覽 / baibai。每次 syncOnce 從 metadata.dsas.public 同步,
+  /// 用真欄 (而非每次讀快取 JSON) 才能讓 /registry/public 直接用 query 過濾。
+  public        Boolean       @default(false)
   syncedAt      DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -35,6 +50,7 @@ model Tablet {
 
   @@index([owner])
   @@index([parentTokenId])
+  @@index([public])
 }
 
 model TrainingJob {
@@ -80,9 +96,36 @@ model Tribute {
   fromAddress  String?  // 留言者錢包地址(可選);未連線錢包時為 null
   fromName     String?  // 顯示用名稱(可選);沒填就顯示「匿名訪客」
   message      String   @db.Text
+  /// 供品小物類型:incense(香) / lotus(紙蓮花) / fruit(鮮果) / tea(茶) / candle(燭) / note(純留言)
+  kind         String   @default("note")
   createdAt    DateTime @default(now())
 
   @@index([tokenId])
+  @@index([createdAt])
+}
+
+/// 哀悼版的一段回憶 (story)。屋主與訪客都能投稿 (不要求 SIWE 登入)。
+///
+/// 投稿時內容會先 pin 到 IPFS 拿 contentCid (不可竄改),狀態預設 PENDING,
+/// 屋主審核 (PATCH→APPROVED/REJECTED) 後才公開可見。屋主在塔位頁把 APPROVED
+/// 的 stories 合併進 metadata 簽 setTokenURI 上鏈,成功後 commit 把它們翻成
+/// ONCHAIN (避免重複批次)。鏈上 dsas.stories[] 是屋主策展快照,這裡才是即時流。
+model MemorialStory {
+  id            String      @id @default(cuid())
+  tokenId       BigInt
+  title         String
+  body          String      @db.Text
+  authorName    String? // 顯示名 (可選)
+  authorAddress String? // 投稿時若有連錢包則記 checksummed 地址
+  photoUri      String? // 可選單張照片的 ipfs:// uri (前端先上傳好才傳進來)
+  refDate       String? // 回憶所指日期 (可選, ISO)
+  contentCid    String // pin 的 story JSON CID — 不可竄改證明
+  status        StoryStatus @default(PENDING)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([tokenId])
+  @@index([tokenId, status])
   @@index([createdAt])
 }
 

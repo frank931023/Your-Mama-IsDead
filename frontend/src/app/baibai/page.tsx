@@ -23,9 +23,9 @@ import { ChevronLeft, Loader2, Wind, Flame } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useError } from "@/components/ErrorDialog";
-import { getRegistry, type TabletRecord } from "@/lib/api";
+import { getPublicRegistry, fetchTablet, type TabletRecord } from "@/lib/api";
 import { displayName, formatDate, ipfsToHttps, shortName } from "@/lib/utils";
-import { PilgrimageHall } from "@/components/baibai/PilgrimageHall";
+import { MemorialScroll } from "@/components/baibai/MemorialScroll";
 
 export default function BaiBaiPage(): React.ReactElement {
   const { showError } = useError();
@@ -33,9 +33,9 @@ export default function BaiBaiPage(): React.ReactElement {
   const [loading, setLoading] = React.useState(true);
   const [chosen, setChosen] = React.useState<TabletRecord | null>(null);
 
-  React.useEffect(() => {
+  const loadList = React.useCallback(() => {
     let cancelled = false;
-    getRegistry()
+    getPublicRegistry()
       .then((rs) => {
         if (!cancelled) setItems(rs);
       })
@@ -50,8 +50,27 @@ export default function BaiBaiPage(): React.ReactElement {
     };
   }, [showError]);
 
+  React.useEffect(() => loadList(), [loadList]);
+
+  // 屋主在追悼頁批次上鏈後重新拉該塔位 (反映新 metadata.dsas.stories)。
+  const reloadChosen = React.useCallback(async (): Promise<void> => {
+    if (!chosen) return;
+    try {
+      const fresh = await fetchTablet(chosen.tokenId);
+      setChosen(fresh);
+    } catch {
+      /* 拉失敗就維持現狀 */
+    }
+  }, [chosen]);
+
   if (chosen) {
-    return <PilgrimageHall tablet={chosen} onExit={() => setChosen(null)} />;
+    return (
+      <MemorialScroll
+        tablet={chosen}
+        onExit={() => setChosen(null)}
+        onReload={() => void reloadChosen()}
+      />
+    );
   }
 
   return (
@@ -77,7 +96,10 @@ export default function BaiBaiPage(): React.ReactElement {
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-16 text-center text-sm text-ink-muted">
             <Wind className="h-8 w-8" aria-hidden />
-            <p>目前還沒有任何燈塔被點亮。</p>
+            <p>目前還沒有任何「公開」的追悼頁。</p>
+            <p className="text-xs">
+              已建立塔位的家人,可在塔位頁編輯資料時勾選「公開追悼頁」,讓這座燈塔出現在這裡。
+            </p>
             <Link href="/mint" className="underline underline-offset-2 hover:text-gold-dark">
               為某個人點亮第一座燈塔
             </Link>

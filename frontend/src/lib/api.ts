@@ -28,6 +28,8 @@ export interface TabletRecord {
   tokenURI: string;
   artifactURI: string | null;
   metadata: TabletMetadata | null;
+  /** 是否公開列在公開總覽 / baibai (來自 metadata.dsas.public,後端同步成真欄)。 */
+  public?: boolean;
   createdAt: string;
 }
 
@@ -125,6 +127,12 @@ export async function getOwned(owner: string): Promise<TabletRecord[]> {
 
 export async function getRegistry(): Promise<TabletRecord[]> {
   const res = await fetch(`${BACKEND_URL}/api/tablets/registry`, { cache: "no-store" });
+  return handle<TabletRecord[]>(res);
+}
+
+/** 只取屋主已設「公開」的塔位 (給 /baibai 與公開總覽用)。 */
+export async function getPublicRegistry(): Promise<TabletRecord[]> {
+  const res = await fetch(`${BACKEND_URL}/api/tablets/registry/public`, { cache: "no-store" });
   return handle<TabletRecord[]>(res);
 }
 
@@ -393,12 +401,16 @@ export async function getSimliFaceStatus(
   return handle<SimliFaceStatus>(res);
 }
 
+/** 留言板供品小物類型。 */
+export type TributeKind = "incense" | "lotus" | "fruit" | "tea" | "candle" | "note";
+
 export interface Tribute {
   id: string;
   tokenId: string;
   fromAddress: string | null;
   fromName: string | null;
   message: string;
+  kind: TributeKind;
   createdAt: string;
 }
 
@@ -409,7 +421,7 @@ export async function listTributes(tokenId: string | number): Promise<Tribute[]>
 
 export async function createTribute(
   tokenId: string | number,
-  body: { message: string; fromName?: string; fromAddress?: string },
+  body: { message: string; fromName?: string; fromAddress?: string; kind?: TributeKind },
 ): Promise<Tribute> {
   const res = await fetch(`${BACKEND_URL}/api/tributes/${tokenId}`, {
     method: "POST",
@@ -417,6 +429,107 @@ export async function createTribute(
     body: JSON.stringify(body),
   });
   return handle<Tribute>(res);
+}
+
+// ── 哀悼版 Stories (回憶) ─────────────────────────────────────────────────
+
+export type StoryStatus = "PENDING" | "APPROVED" | "REJECTED" | "ONCHAIN";
+
+export interface StoryRecord {
+  id: string;
+  tokenId: string;
+  title: string;
+  body: string;
+  authorName: string | null;
+  authorAddress: string | null;
+  photoUri: string | null;
+  refDate: string | null;
+  contentCid: string;
+  status: StoryStatus;
+  createdAt: string;
+}
+
+/** 公開:列出已核可的回憶 (APPROVED + ONCHAIN)。 */
+export async function listStories(tokenId: string | number): Promise<StoryRecord[]> {
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}`, { cache: "no-store" });
+  return handle<StoryRecord[]>(res);
+}
+
+/** 屋主:列出全部狀態 (含待審 / 已隱藏) 供審核。需 SIWE owner jwt。 */
+export async function listAllStories(
+  tokenId: string | number,
+  jwt: string,
+): Promise<StoryRecord[]> {
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}/all`, {
+    headers: authHeaders(jwt),
+    cache: "no-store",
+  });
+  return handle<StoryRecord[]>(res);
+}
+
+/** 任何人投稿一段回憶 (內容會由後端 pin 到 IPFS,狀態 PENDING)。 */
+export async function createStory(
+  tokenId: string | number,
+  body: {
+    title: string;
+    body: string;
+    authorName?: string;
+    authorAddress?: string;
+    photoUri?: string;
+    refDate?: string;
+  },
+): Promise<StoryRecord> {
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handle<StoryRecord>(res);
+}
+
+/** 屋主:核可 / 隱藏一則回憶。需 SIWE owner jwt。 */
+export async function moderateStory(
+  tokenId: string | number,
+  storyId: string,
+  status: "APPROVED" | "REJECTED",
+  jwt: string,
+): Promise<StoryRecord> {
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}/${storyId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(jwt) },
+    body: JSON.stringify({ status }),
+  });
+  return handle<StoryRecord>(res);
+}
+
+/** 屋主:刪除一則回憶 (DB row;IPFS 內容仍在)。需 SIWE owner jwt。 */
+export async function deleteStory(
+  tokenId: string | number,
+  storyId: string,
+  jwt: string,
+): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}/${storyId}`, {
+    method: "DELETE",
+    headers: authHeaders(jwt),
+  });
+  if (!res.ok) {
+    // 204 走不到這;非 2xx 才解析錯誤
+    await handle<unknown>(res);
+  }
+}
+
+/** 屋主:把剛 setTokenURI 上鏈那批 story id 標記成 ONCHAIN。需 SIWE owner jwt。 */
+export async function commitStories(
+  tokenId: string | number,
+  ids: string[],
+  jwt: string,
+): Promise<{ committed: number }> {
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(jwt) },
+    body: JSON.stringify({ ids }),
+  });
+  return handle<{ committed: number }>(res);
 }
 
 /**

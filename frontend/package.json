@@ -14,7 +14,15 @@
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
     "@tanstack/react-query": "^5.51.0",
+    "@tiptap/extension-image": "^3.26.0",
+    "@tiptap/extension-link": "^3.26.0",
+    "@tiptap/extension-text-align": "^3.26.0",
+    "@tiptap/extension-underline": "^3.26.0",
+    "@tiptap/pm": "^3.26.0",
+    "@tiptap/react": "^3.26.0",
+    "@tiptap/starter-kit": "^3.26.0",
     "clsx": "^2.1.1",
+    "dompurify": "^3.4.8",
     "gaussian-splat-renderer-for-lam": "^0.0.9-alpha.2",
     "lucide-react": "^0.439.0",
     "next": "^14.2.5",
@@ -31,6 +39,7 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@types/node": "^20.16.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
