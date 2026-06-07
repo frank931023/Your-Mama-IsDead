@@ -1,10 +1,13 @@
 import type {
   Artifact,
   Assets,
+  AvatarConfig,
   Consent,
   DeceasedInfo,
   DescendantSnapshot,
   ERC721Attribute,
+  MemorialTheme,
+  Story,
   TabletMetadata,
 } from "../../shared/types/tablet.js";
 
@@ -21,6 +24,14 @@ export interface TabletMetadataInput {
   assets?: Assets;
   artifact?: Artifact;
   consent?: Consent;
+  /** Talking-head / cloned-voice config (kept in lock-step with frontend builder). */
+  avatar?: AvatarConfig;
+  /** 哀悼版回憶的上鏈快照 (屋主策展)。 */
+  stories?: Story[];
+  /** 追悼頁背景主題 id。 */
+  background?: MemorialTheme;
+  /** 是否公開列出。false 也有意義,故 spread 用 !== undefined。 */
+  public?: boolean;
 }
 
 const GENDER_LABEL: Record<NonNullable<DeceasedInfo["gender"]>, string> = {
@@ -107,6 +118,12 @@ export function buildTabletMetadata(
       ...(input.assets ? { assets: input.assets } : {}),
       ...(input.artifact ? { artifact: input.artifact } : {}),
       ...(input.consent ? { consent: input.consent } : {}),
+      ...(input.avatar?.avatarLabel || input.avatar?.simliFaceId
+        ? { avatar: input.avatar }
+        : {}),
+      ...(input.stories && input.stories.length > 0 ? { stories: input.stories } : {}),
+      ...(input.background ? { background: input.background } : {}),
+      ...(input.public !== undefined ? { public: input.public } : {}),
     },
   };
 }

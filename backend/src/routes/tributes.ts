@@ -19,6 +19,9 @@ const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u, "tokenId must be base-10"),
 });
 
+/** 供品小物類型;預設 note(純留言)。 */
+const TributeKind = z.enum(["incense", "lotus", "fruit", "tea", "candle", "note"]);
+
 const CreateBody = z.object({
   message: z.string().min(1).max(1000),
   fromName: z.string().max(80).optional(),
@@ -26,6 +29,7 @@ const CreateBody = z.object({
     .string()
     .optional()
     .refine((v) => !v || isAddress(v), { message: "fromAddress must be 0x EIP-55 hex" }),
+  kind: TributeKind.optional(),
 });
 
 interface SerializedTribute {
@@ -34,6 +38,7 @@ interface SerializedTribute {
   fromAddress: string | null;
   fromName: string | null;
   message: string;
+  kind: string;
   createdAt: string;
 }
 
@@ -43,6 +48,7 @@ function serialize(t: {
   fromAddress: string | null;
   fromName: string | null;
   message: string;
+  kind: string;
   createdAt: Date;
 }): SerializedTribute {
   return {
@@ -51,6 +57,7 @@ function serialize(t: {
     fromAddress: t.fromAddress,
     fromName: t.fromName,
     message: t.message,
+    kind: t.kind,
     createdAt: t.createdAt.toISOString(),
   };
 }
@@ -87,6 +94,7 @@ export const tributeRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         message: body.data.message.trim(),
         fromName: body.data.fromName?.trim() || null,
         fromAddress: body.data.fromAddress ? getAddress(body.data.fromAddress) : null,
+        kind: body.data.kind ?? "note",
       },
     });
     return reply.code(201).send(serialize(created));

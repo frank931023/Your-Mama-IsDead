@@ -47,6 +47,7 @@ function serializeTablet(t: {
   tokenURI: string;
   artifactURI: string | null;
   metadataJson: unknown;
+  public: boolean;
   syncedAt: Date | null;
 }): Record<string, unknown> {
   return {
@@ -56,8 +57,20 @@ function serializeTablet(t: {
     tokenURI: t.tokenURI,
     artifactURI: t.artifactURI,
     metadata: t.metadataJson,
+    public: t.public,
     syncedAt: t.syncedAt?.toISOString() ?? null,
   };
+}
+
+/** 從抓回來的 metadata JSON 讀 dsas.public (容錯,讀不到當 false)。 */
+function readPublicFlag(metadata: unknown): boolean {
+  if (metadata && typeof metadata === "object") {
+    const dsas = (metadata as { dsas?: { public?: unknown } }).dsas;
+    if (dsas && typeof dsas === "object" && typeof dsas.public === "boolean") {
+      return dsas.public;
+    }
+  }
+  return false;
 }
 
 /**
@@ -92,6 +105,11 @@ async function syncOnce(tokenId: bigint): Promise<{
     }
   }
 
+  // 公開旗標來自 metadata.dsas.public,存成真欄好讓 /registry/public 用 query 過濾。
+  // 注意:metadata 抓失敗 (null) 時保守當 false — 但若已有舊 metadata 別誤覆蓋,
+  // 故只有成功抓到 metadata 時才更新 public,抓不到就沿用既有值。
+  const publicFlag = metadata !== null ? readPublicFlag(metadata) : undefined;
+
   await prisma.tablet.upsert({
     where: { tokenId },
     create: {
@@ -101,6 +119,7 @@ async function syncOnce(tokenId: bigint): Promise<{
       tokenURI,
       artifactURI: artifactURI || null,
       metadataJson: metadata as never,
+      public: publicFlag ?? false,
       syncedAt: new Date(),
     },
     update: {
@@ -109,6 +128,7 @@ async function syncOnce(tokenId: bigint): Promise<{
       tokenURI,
       artifactURI: artifactURI || null,
       metadataJson: metadata as never,
+      ...(publicFlag !== undefined ? { public: publicFlag } : {}),
       syncedAt: new Date(),
     },
   });
@@ -120,6 +140,18 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   // GET /api/tablets/registry  —  every tablet currently in DB, newest first.
   app.get("/registry", async () => {
     const rows = await prisma.tablet.findMany({ orderBy: { tokenId: "desc" } });
+    return rows.map(serializeTablet);
+  });
+
+  // GET /api/tablets/registry/public  —  only tablets the owner opted to make
+  // public (dsas.public === true, synced into the `public` column). This is
+  // what /baibai and the public registry view read so private memorials stay
+  // hidden. Toggling visibility takes effect after the owner's setTokenURI + sync.
+  app.get("/registry/public", async () => {
+    const rows = await prisma.tablet.findMany({
+      where: { public: true },
+      orderBy: { tokenId: "desc" },
+    });
     return rows.map(serializeTablet);
   });
 

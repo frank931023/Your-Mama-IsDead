@@ -27,6 +27,7 @@ import { simliRoutes } from "./routes/simli.js";
 import { avatarRoutes, avatarSessionRoutes } from "./routes/avatar.js";
 import { attachAvatarWsProxy } from "./lib/ws-proxy.js";
 import { tributeRoutes } from "./routes/tributes.js";
+import { storyRoutes } from "./routes/stories.js";
 import { startTrainingWorker } from "./queue/training.js";
 
 /**
@@ -83,6 +84,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(avatarRoutes, { prefix: "/api/avatar" });    // (新) 自建 LAM 渲染機:上傳照片/音頻建 3DGS avatar/克隆聲音
   await app.register(avatarSessionRoutes, { prefix: "/api/personas" }); // (新) /:tokenId/avatar-session 簽 WS token
   await app.register(tributeRoutes, { prefix: "/api/tributes" }); // 線上靈堂留言板
+  await app.register(storyRoutes, { prefix: "/api/stories" });    // 哀悼版回憶 (story)
 
   return app;
 }

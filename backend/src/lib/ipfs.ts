@@ -34,3 +34,47 @@ export async function fetchIPFS(uri: string): Promise<unknown> {
   });
   return res.data as unknown;
 }
+
+const PINATA_PIN_JSON = "https://api.pinata.cloud/pinning/pinJSONToIPFS";
+
+interface PinataPinJsonResponse {
+  IpfsHash: string;
+  PinSize: number;
+  Timestamp: string;
+}
+
+/**
+ * Pin an arbitrary JSON object to IPFS via Pinata and return its CID.
+ *
+ * Used for small text payloads (e.g. a 哀悼版 story) where streaming a file
+ * through /uploads/relay would be overkill. Throws "pinata_not_configured"
+ * if PINATA_JWT is unset so callers can surface a 503.
+ */
+export async function pinJSON(
+  obj: unknown,
+  name = "dsas-json",
+): Promise<{ cid: string; uri: string; size: number }> {
+  if (!env.PINATA_JWT) {
+    throw new Error("pinata_not_configured");
+  }
+  const res = await axios.post<PinataPinJsonResponse>(
+    PINATA_PIN_JSON,
+    {
+      pinataContent: obj,
+      pinataMetadata: { name, keyvalues: { app: "DSAS" } },
+    },
+    {
+      timeout: 30_000,
+      headers: {
+        Authorization: `Bearer ${env.PINATA_JWT}`,
+        "Content-Type": "application/json",
+      },
+      validateStatus: (s) => s >= 200 && s < 300,
+    },
+  );
+  return {
+    cid: res.data.IpfsHash,
+    uri: `ipfs://${res.data.IpfsHash}`,
+    size: res.data.PinSize,
+  };
+}

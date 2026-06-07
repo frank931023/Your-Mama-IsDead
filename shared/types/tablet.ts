@@ -30,6 +30,40 @@ export interface DescendantSnapshot {
   wallet?: string;
 }
 
+/**
+ * 哀悼版上的一段回憶 (story / memory)。屋主與訪客都能投稿。
+ *
+ * 訪客投稿時內容會先 pin 到 IPFS 拿到不可竄改的 `contentCid`,存進後端 DB
+ * (狀態 PENDING)。屋主核可後在塔位頁一次性把已核可的 stories 合併進
+ * metadata、簽 setTokenURI 上鏈。鏈上的 `stories[]` 是屋主策展的權威快照,
+ * 後端 DB (MemorialStory) 才有完整即時流與審核狀態。
+ *
+ * `id` 同時是上鏈快照與 DB row 的共用主鍵 (= MemorialStory.id),用來 dedup:
+ * 重複批次上鏈時,id 已在鏈上陣列者不再 append。
+ */
+export interface Story {
+  id: string;
+  title: string;
+  body: string;
+  author?: string; // 顯示名 (訪客自填或屋主)
+  authorAddress?: string; // 有連錢包才有
+  photo?: StorageURI; // 可選單張 ipfs:// 照片
+  date?: string; // 回憶所指日期 (可選, ISO)
+  createdAt: string; // 投稿時間 (ISO)
+  contentCid?: string; // pin 的 story JSON CID (不可竄改證明)
+}
+
+/** 追悼頁的背景主題 id (對應 frontend/src/lib/memorial-themes.ts)。 */
+export type MemorialTheme =
+  | "paper"
+  | "candlelight"
+  | "lotus"
+  | "night-sky"
+  | "autumn"
+  | "ocean"
+  | "garden"
+  | "ink-wash";
+
 export interface DeceasedInfo {
   name: string;
   alias?: string[];
@@ -100,6 +134,12 @@ export interface DSASExtension {
   artifact?: Artifact;
   consent?: Consent;
   avatar?: AvatarConfig;
+  /** 哀悼版回憶的上鏈快照 (屋主策展)。權威即時流在後端 MemorialStory。 */
+  stories?: Story[];
+  /** 追悼頁選定的背景主題 id。缺省則用預設 (paper)。 */
+  background?: MemorialTheme;
+  /** 是否公開列在公開總覽 / baibai 選擇頁。缺省視為「不公開」(安全預設)。 */
+  public?: boolean;
 }
 
 export interface ERC721Attribute {

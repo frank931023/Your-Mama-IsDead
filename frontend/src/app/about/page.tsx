@@ -121,8 +121,9 @@ export default function AboutPage(): React.ReactElement {
             title="現代 AI 模組"
             body={
               <>
-                以 RAG(檢索增強生成)為核心,結合 LoRA 肖像生成 / TTS 語音合成 / Diffusion 短片渲染,
-                支援 OpenAI、ElevenLabs、fal.ai (Kling、Hailuo、Veo 等)多家供應商,單一 API key 即可啟用。
+                運算層跑在自建的 render 渲染機(本地開源模型,不出第三方雲):vLLM 跑 Qwen3-14B
+                對話、IndexTTS2 以本人錄音克隆聲音、LAM 從單張照片重建 3D 說話頭並由 LAM Audio2Expression
+                與 ARTalk 驅動表情與頭姿,再以 RAG(檢索增強生成)從逝者生前的對話紀錄佐證回答,讓重現更貼近本人。
               </>
             }
           />
