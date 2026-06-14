@@ -159,29 +159,40 @@ export async function getCloudStatus(): Promise<CloudStatus> {
   return handle<CloudStatus>(res);
 }
 
+/** 檢索命中、要隨本輪回覆浮現的回憶照片 (story 附的)。 */
+export interface MemoryMediaHit {
+  /** ipfs:// uri */
+  uri: string;
+  /** 照片所屬回憶的摘要,卡片說明用。 */
+  caption: string;
+  source: "story";
+}
+
 /**
  * 取该 persona 的 system prompt(LAM 模式要前端自带塞进 messages[0])。
- * 带 query 时后端会用它对该 persona 的对话纪录记忆库做 RAG 检索,把命中的
- * 逝者真实语料附加到 prompt 里(真 RAG:每轮用问题检索)。回 { prompt, memoryUsed }。
+ * 带 query 时后端会用它对该 persona 的记忆库 (对话纪录 + 已核可回忆) 做 RAG
+ * 检索,把命中语料附加到 prompt 里(真 RAG:每轮用问题检索)。
+ * 回 { prompt, memoryUsed, media } — media 是命中回忆附带的照片,前端渲染成卡片。
  */
 export async function fetchPersonaPrompt(
   tokenId: string | number,
   jwt: string,
   query?: string,
-): Promise<{ prompt: string; memoryUsed: number }> {
+): Promise<{ prompt: string; memoryUsed: number; media: MemoryMediaHit[] }> {
   const qs = query && query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
   const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/persona-prompt${qs}`, {
     headers: authHeaders(jwt),
     cache: "no-store",
   });
-  const data = await handle<{ prompt: string; memoryUsed?: number }>(res);
-  return { prompt: data.prompt, memoryUsed: data.memoryUsed ?? 0 };
+  const data = await handle<{ prompt: string; memoryUsed?: number; media?: MemoryMediaHit[] }>(res);
+  return { prompt: data.prompt, memoryUsed: data.memoryUsed ?? 0, media: data.media ?? [] };
 }
 
 /** RAG 索引重建结果。 */
 export interface ReindexResult {
   tokenId: string;
   chatlogsProcessed: number;
+  storiesProcessed?: number;
   piecesIndexed: number;
   skipped: string[];
 }
@@ -429,6 +440,21 @@ export async function createTribute(
     body: JSON.stringify(body),
   });
   return handle<Tribute>(res);
+}
+
+/** 屋主:刪除不當留言 (燈塔典藏管理頁用)。需 SIWE owner jwt。 */
+export async function deleteTribute(
+  tokenId: string | number,
+  tributeId: string,
+  jwt: string,
+): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/tributes/${tokenId}/${tributeId}`, {
+    method: "DELETE",
+    headers: authHeaders(jwt),
+  });
+  if (!res.ok) {
+    await handle<unknown>(res);
+  }
 }
 
 // ── 哀悼版 Stories (回憶) ─────────────────────────────────────────────────

@@ -27,10 +27,33 @@ import {
   getTokenURI,
 } from "../chain.js";
 import { fetchIPFS } from "../lib/ipfs.js";
+import { env } from "../lib/env.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u, "tokenId must be base-10"),
 });
+
+/**
+ * 被隱藏的鏈上 tokenId 集合 (來自 env.EXCLUDED_TOKEN_IDS,逗號分隔)。
+ * ERC-721 無法銷毀,demo 時若鏈上有不想展示的舊塔位就在這裡列出;
+ * scan / registry / lazy-sync 一律跳過,前端就看不到。
+ */
+const EXCLUDED_TOKEN_IDS: Set<bigint> = new Set(
+  env.EXCLUDED_TOKEN_IDS.split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^\d+$/.test(s))
+    .map((s) => BigInt(s)),
+);
+
+function isExcluded(tokenId: bigint): boolean {
+  return EXCLUDED_TOKEN_IDS.has(tokenId);
+}
+
+/** 給 Prisma where 用的排除條件 (空集合時回 undefined,不加條件)。 */
+function excludeWhere(): { tokenId: { notIn: bigint[] } } | undefined {
+  if (EXCLUDED_TOKEN_IDS.size === 0) return undefined;
+  return { tokenId: { notIn: [...EXCLUDED_TOKEN_IDS] } };
+}
 
 const AddressParam = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/u, "address must be 0x-hex"),
@@ -139,7 +162,10 @@ async function syncOnce(tokenId: bigint): Promise<{
 export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // GET /api/tablets/registry  —  every tablet currently in DB, newest first.
   app.get("/registry", async () => {
-    const rows = await prisma.tablet.findMany({ orderBy: { tokenId: "desc" } });
+    const rows = await prisma.tablet.findMany({
+      where: excludeWhere(),
+      orderBy: { tokenId: "desc" },
+    });
     return rows.map(serializeTablet);
   });
 
@@ -149,7 +175,7 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   // hidden. Toggling visibility takes effect after the owner's setTokenURI + sync.
   app.get("/registry/public", async () => {
     const rows = await prisma.tablet.findMany({
-      where: { public: true },
+      where: { public: true, ...excludeWhere() },
       orderBy: { tokenId: "desc" },
     });
     return rows.map(serializeTablet);
@@ -165,6 +191,11 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const found: bigint[] = [];
     let misses = 0;
     for (let i = 1n; i <= MAX_PROBE; i++) {
+      // 被排除的 tokenId 直接跳過(不 probe、不 sync),demo 隱藏舊塔位用。
+      if (isExcluded(i)) {
+        misses = 0; // 排除的洞不算「連續 miss」,避免提早中止掃描
+        continue;
+      }
       try {
         await getOwnerOf(i);
         found.push(i);
@@ -197,6 +228,11 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       return reply.code(400).send({ error: "invalid_token_id" });
     }
     const tokenId = parseTokenId(params.data.tokenId);
+
+    // 被排除的塔位:當作不存在(連直接打網址都看不到)。
+    if (isExcluded(tokenId)) {
+      return reply.code(404).send({ error: "tablet_not_found" });
+    }
 
     const cached = await prisma.tablet.findUnique({ where: { tokenId } });
     let synced = cached;
@@ -235,7 +271,7 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     }
     const owner = getAddress(params.data.address);
     const rows = await prisma.tablet.findMany({
-      where: { owner },
+      where: { owner, ...excludeWhere() },
       orderBy: { tokenId: "asc" },
     });
     return reply.send({
@@ -255,7 +291,7 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     }
     const owner = getAddress(query.data.owner);
     const rows = await prisma.tablet.findMany({
-      where: { owner },
+      where: { owner, ...excludeWhere() },
       orderBy: { tokenId: "asc" },
     });
     return reply.send(rows.map(serializeTablet));
@@ -268,6 +304,10 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       return reply.code(400).send({ error: "invalid_token_id" });
     }
     const tokenId = parseTokenId(params.data.tokenId);
+    // 被排除的塔位不允許手動同步,避免又寫回 DB。
+    if (isExcluded(tokenId)) {
+      return reply.code(404).send({ error: "tablet_not_found" });
+    }
     try {
       const result = await syncOnce(tokenId);
       const row = await prisma.tablet.findUnique({ where: { tokenId } });

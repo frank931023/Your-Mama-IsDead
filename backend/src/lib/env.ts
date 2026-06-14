@@ -29,6 +29,12 @@ const EnvSchema = z.object({
   BACKEND_PORT: z.coerce.number().int().positive().default(4000),
   BACKEND_HOST: z.string().default("0.0.0.0"),
   FRONTEND_URL: z.string().url().optional(),
+
+  // 隱藏特定鏈上 tokenId(逗號分隔,例如 "1,2,3,4,5,6,7")。
+  // ERC-721 一旦鑄造就無法銷毀,demo 時若鏈上有不想展示的舊塔位,
+  // 在這裡列出即可:scan / registry / lazy-sync 一律跳過,前端也就看不到。
+  // 預設空字串 = 不排除任何 token。
+  EXCLUDED_TOKEN_IDS: z.string().default(""),
   PINATA_JWT: z.string().optional(),
   COMPUTE_URL: z.string().url().optional(),
   IPFS_GATEWAY: z.string().url().default("https://gateway.pinata.cloud/ipfs/"),

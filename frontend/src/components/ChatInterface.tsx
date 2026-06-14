@@ -1,19 +1,20 @@
 "use client";
 
 /**
- * 三欄聊天介面 (主元件)
+ * 聊天介面 (主元件)
  *
- * 三個可拖拉欄位 (使用 react-resizable-panels):
- *   ┌──────────────────────────┬────────────────┬──────────────┐
- *   │ 對話視窗 (≥30%)          │ 肖像 (≥18%)    │ 語音+短片    │
- *   │ - SIWE 登入流程          │ - 大頭照展示   │ - 自動播 TTS │
- *   │ - 訊息串                  │ - AI 重生肖像  │ - 短片生成   │
- *   │ - 文字輸入框              │                │              │
- *   └──────────────────────────┴────────────────┴──────────────┘
+ * 三種互動形式 (?ui=,由 PersonaActivationModal 選定):
+ *   - text:   純文字對談 — 單欄訊息串,無聲音無人像
+ *   - avatar: 打字輸入 + 右半大人像,分身以聲音 + 3DGS 人像回應 (預設)
+ *   - voice:  全螢幕人像 + 麥克風,語音對話 (mic → STT → 同一條 chat 管線)
  *
- * 對話走 SSE 串流 (chat-stream.ts),逐 token 顯示。
- * 每則 assistant 回覆後自動觸發 cloud-voice 生成語音並 autoplay。
- * 短片 / 重生肖像則為手動按鈕觸發 (因為 fal.ai 一次要付 $0.25)。
+ * 對話路徑:
+ *   - LAM 可用且非 text:走 LamAvatar 的 WS (LLM+TTS+表情都在 render 機)
+ *   - 其它:走 backend SSE 串流 (chat-stream.ts),逐 token 顯示;
+ *     avatar/voice 形式下回覆後自動觸發 TTS,text 形式保持安靜
+ *
+ * RAG:每輪檢索命中的「親友回憶」若附有照片,後端會隨回覆送回 media,
+ * 渲染成訊息氣泡下的回憶卡片 (照片淡入浮現)。
  */
 import * as React from "react";
 import Link from "next/link";
@@ -22,7 +23,6 @@ import { Send, Loader2, AlertCircle, Mic, Square, MessageSquare, Volume2 } from 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useError } from "@/components/ErrorDialog";
-import { ProgressBar } from "@/components/ProgressBar";
 import { SimliAvatar, type SimliAvatarHandle } from "@/components/SimliAvatar";
 import { LamAvatar, type LamAvatarHandle } from "@/components/LamAvatar";
 import { useSiweLogin } from "@/lib/wallet";
@@ -33,13 +33,18 @@ import {
   fetchPersonaPrompt,
   getCloudStatus,
   transcribeAudio,
+  type MemoryMediaHit,
   type TabletRecord,
 } from "@/lib/api";
 import { ipfsToHttps, cn, shortName } from "@/lib/utils";
 
+/** 互動形式:純文字 / 文字+聲音+人像 / 語音對話+聲音+人像。 */
+export type ChatUiMode = "text" | "avatar" | "voice";
+
 interface ChatInterfaceProps {
   tokenId: string;
   mode?: "local" | "cloud";
+  ui?: ChatUiMode;
 }
 
 interface UiMessage extends ChatMessage {
@@ -48,9 +53,15 @@ interface UiMessage extends ChatMessage {
   audioUrl?: string;
   portraitUrl?: string;
   error?: string;
+  /** 本輪檢索命中、隨回覆浮現的回憶照片。 */
+  media?: MemoryMediaHit[];
 }
 
-export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): React.ReactElement {
+export function ChatInterface({
+  tokenId,
+  mode = "local",
+  ui = "avatar",
+}: ChatInterfaceProps): React.ReactElement {
   const { showError } = useError();
   const { login, logout, isLoggingIn, token, error: loginError } = useSiweLogin(tokenId);
   const [tablet, setTablet] = React.useState<TabletRecord | null>(null);
@@ -71,7 +82,9 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
   // LAM 模式: 当前正在接收流式回应的 assistant 气泡 id,供 onTextDelta 累加。
   const lamAssistantIdRef = React.useRef<string | null>(null);
 
-  const useLam = avatarProvider === "lam" && avatarAvailable && mode === "cloud";
+  // 純文字形式 (ui="text") 完全不掛人像/聲音 — 安靜的文字往返。
+  const allowAvatar = ui !== "text";
+  const useLam = avatarProvider === "lam" && avatarAvailable && mode === "cloud" && allowAvatar;
   // LAM 模式下,若該 tablet 還沒克隆聲音 (metadata.dsas.avatar.voiceLabel 為空),
   // avatar 會用渲染機的預設聲音。提示使用者去塔位補傳區生成逝者本人的克隆聲音。
   const needsVoiceClone =
@@ -82,7 +95,8 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
 
   // Mic / voice conversation mode. When true the UI goes full-screen avatar and
   // the user talks instead of typing (mic → Whisper STT → same chat pipeline).
-  const [voiceMode, setVoiceMode] = React.useState(false);
+  // ui="voice" 直接以語音對話開場 (modal 選「語音對話」進來)。
+  const [voiceMode, setVoiceMode] = React.useState(ui === "voice");
   // Recording state machine: idle → recording → transcribing (STT) → back to idle.
   const [recState, setRecState] = React.useState<"idle" | "recording" | "transcribing">("idle");
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
@@ -104,7 +118,7 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
   // Show the Simli talking-head only in cloud mode and only when the backend
   // reports a configured SIMLI_API_KEY. Local mode keeps the static portrait
   // because the local compute server doesn't proxy Simli sessions.
-  const useAvatar = mode === "cloud" && avatarAvailable;
+  const useAvatar = mode === "cloud" && avatarAvailable && allowAvatar;
 
   // 訊息更新時自動捲到底,避免使用者要手動往下滑看新回覆
   React.useEffect(() => {
@@ -213,14 +227,20 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     // prompt — 每轮都要按当前问题重新检索 (与缓存 personaPromptRef 的旧逻辑相反)。
     if (useLam) {
       try {
-        const { prompt: personaPrompt, memoryUsed } = await fetchPersonaPrompt(tokenId, token, text);
-        // RAG 可觀測性:瀏覽器 console 直接看本輪注入了幾段逝者真實語料 (0 = 沒命中
-        // / 沒上傳對話紀錄)。完整命中明細在「後端」console 的 [RAG] 日誌。
+        const { prompt: personaPrompt, memoryUsed, media } = await fetchPersonaPrompt(tokenId, token, text);
+        // RAG 可觀測性:瀏覽器 console 直接看本輪注入了幾段記憶 (0 = 沒命中
+        // / 沒上傳語料)。完整命中明細在「後端」console 的 [RAG] 日誌。
         console.log(
-          `%c[RAG] 本輪注入 ${memoryUsed} 段記憶`,
+          `%c[RAG] 本輪注入 ${memoryUsed} 段記憶,${media.length} 張回憶照片`,
           memoryUsed > 0 ? "color:#10b981;font-weight:bold" : "color:#999",
-          memoryUsed > 0 ? "(AI 會參考逝者本人說過的話)" : "(純 metadata persona;若已上傳對話紀錄請看後端 [RAG] 日誌)",
+          memoryUsed > 0 ? "(AI 會參考對話紀錄與親友回憶)" : "(純 metadata persona;若已上傳語料請看後端 [RAG] 日誌)",
         );
+        // 命中的回憶照片掛上 assistant 氣泡 (隨回覆浮現)。
+        if (media.length > 0) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantMsg.id ? { ...m, media } : m)),
+          );
+        }
         lamAssistantIdRef.current = assistantMsg.id;
         const wsMessages = [
           { role: "system", content: personaPrompt },
@@ -250,10 +270,27 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
             prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: m.content + delta } : m)),
           );
         },
+        onEvent: (ev) => {
+          // 後端在 token 之前推的回憶照片 (RAG 命中 story 附帶的)。
+          if (ev.type !== "media") return;
+          try {
+            const media = JSON.parse(ev.data.replace(/\\n/g, "\n")) as MemoryMediaHit[];
+            if (Array.isArray(media) && media.length > 0) {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantMsg.id ? { ...m, media } : m)),
+              );
+            }
+          } catch {
+            /* 壞掉的 media frame 不致命,忽略 */
+          }
+        },
       });
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantMsg.id ? { ...m, content: full, pending: false } : m)),
       );
+
+      // 純文字形式保持安靜 — 不觸發 TTS。
+      if (ui === "text") return;
 
       // Auto-trigger voice on every reply. Portrait stays on-demand (button)
       // because cloud image gen is slow and costs money per call.
@@ -524,11 +561,17 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
     );
   }
 
-  // ── Typing mode: left conversation (scrolls) + right large avatar ─────────
+  // ── Typing mode ────────────────────────────────────────────────────────────
+  // ui="text":單欄全寬訊息串 (無人像);其它:左對話 + 右大人像。
   return (
     <div className="flex h-[78vh] w-full gap-3">
       {/* Left: conversation, fixed height with its own scrollbar */}
-      <Card className="flex h-full w-1/2 flex-col overflow-hidden">
+      <Card
+        className={cn(
+          "flex h-full flex-col overflow-hidden",
+          ui === "text" ? "mx-auto w-full max-w-3xl" : "w-1/2",
+        )}
+      >
         <div className="flex items-center justify-between border-b border-ink/10 p-3">
           <h4 className="text-sm font-semibold text-ink">{personName}</h4>
           {modeToggle}
@@ -569,6 +612,28 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
                       前導空白),whitespace-pre-wrap 會把它渲染成開頭空行。去掉開頭
                       空白,內文段落間的換行保留。 */}
                   {m.content.replace(/^\s+/, "") || (m.pending ? "…" : "")}
+                  {/* 回憶卡片:本輪 RAG 命中的親友回憶照片,隨回覆浮現 */}
+                  {m.media && m.media.length > 0 ? (
+                    <div className="mt-2 flex flex-col gap-2">
+                      {m.media.map((md) => (
+                        <figure
+                          key={md.uri}
+                          className="overflow-hidden rounded-md border border-gold/40 bg-paper"
+                        >
+                          <img
+                            src={ipfsToHttps(md.uri)}
+                            alt={md.caption}
+                            loading="lazy"
+                            className="max-h-56 w-full object-cover"
+                          />
+                          <figcaption className="px-2.5 py-1.5 text-xs text-ink-muted">
+                            <span className="mr-1 text-gold-dark">✦ 記憶中的照片</span>
+                            {md.caption}
+                          </figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -595,10 +660,12 @@ export function ChatInterface({ tokenId, mode = "local" }: ChatInterfaceProps): 
         </form>
       </Card>
 
-      {/* Right: large avatar filling the half */}
-      <div className="flex h-full w-1/2 items-stretch overflow-hidden rounded-lg bg-ink">
-        {avatarEl}
-      </div>
+      {/* Right: large avatar filling the half (text 形式不渲染人像) */}
+      {ui !== "text" ? (
+        <div className="flex h-full w-1/2 items-stretch overflow-hidden rounded-lg bg-ink">
+          {avatarEl}
+        </div>
+      ) : null}
     </div>
   );
 }

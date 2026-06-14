@@ -1,22 +1,23 @@
 "use client";
 
 /**
- * 3D 線上紀念館主場景
+ * 3D 線上紀念館主場景 —— 仿現實告別式靈堂
  *
- * 場景元素:
- *   - 中央祖位:石牆 + 大幅肖像(從 metadata.image 載入)
- *   - 牌位前供桌、香爐、兩支蠟燭(燭光閃爍)
- *   - 四周漂浮著該逝者生前的照片(從 metadata.dsas.assets.photos)
- *   - 大廳石板地、拱形天花板暖橘光
+ * 場景元素 (對應現實靈堂的陳設):
+ *   - 後方白布幔 (打摺) + 中央「奠」字圓匾,兩側垂掛輓聯
+ *   - 大幅遺照 (metadata.image),框上披黑紗緞帶,聚光燈打亮
+ *   - 遺照下方層層花山 (白黃菊花),兩側花圈立架
+ *   - 供桌:香爐線香、果盤、三杯清茶、花瓶一對、蠟燭一對
+ *   - 兩側高腳立燭、白燈籠,壇前紅毯與跪墊
+ *   - 四周漂浮著該逝者生前的照片(metadata.dsas.assets.photos)
  *
  * 互動:
- *   - 滑鼠拖曳:OrbitControls 繞看整個靈堂
- *   - 滾輪縮放:可以走近肖像細看
- *   - 「三鞠躬」按鈕:鏡頭三次低首動畫
- *   - 「離開」按鈕:回到選擇頁
+ *   - 滑鼠拖曳:OrbitControls 繞看整個靈堂;滾輪縮放走近遺照
+ *   - 「點燃線香」:香枝亮起 + 香煙粒子裊裊
+ *   - 「三鞠躬」:鏡頭三次低首動畫 + 鐘聲
+ *   - 「留下話語」:留言側欄;完成全套儀式解鎖對話與紀念卡
  */
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Text, Html } from "@react-three/drei";
@@ -25,6 +26,7 @@ import * as THREE from "three";
 import { ChevronLeft, Hand, Flame, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
+import { PersonaActivationModal } from "@/components/PersonaActivationModal";
 import { useError } from "@/components/ErrorDialog";
 import { ipfsToHttps, shortName, displayName, formatDate, truncateAddress } from "@/lib/utils";
 import { createTribute, listTributes, type TabletRecord, type Tribute } from "@/lib/api";
@@ -39,11 +41,12 @@ interface MemorialHallProps {
 }
 
 export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialHallProps): React.ReactElement {
-  const router = useRouter();
   const { showError } = useError();
   const meta = tablet.metadata;
   const portraitUrl = meta?.image ? ipfsToHttps(meta.image) : null;
   const photoUrls = (meta?.dsas?.assets?.photos ?? []).map(ipfsToHttps).slice(0, 8);
+  // 「與他對話」→ 互動形式選擇 modal (與燈塔頁 / 哀悼版同一個)。
+  const [chatModalOpen, setChatModalOpen] = React.useState(false);
 
   const cameraRef = React.useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = React.useRef<{ target: THREE.Vector3; update: () => void } | null>(null);
@@ -253,7 +256,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
               下載追思紀念卡
             </Button>
             <Button
-              onClick={() => router.push(`/tablet/${tablet.tokenId}/chat?mode=cloud`)}
+              onClick={() => setChatModalOpen(true)}
               size="lg"
               className="pointer-events-auto bg-gold text-ink shadow-lg shadow-gold/40 hover:bg-gold-dark hover:text-paper"
               style={{ animation: "ritual-hint-fade 1.6s ease-out" }}
@@ -264,6 +267,13 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           </>
         ) : null}
       </div>
+
+      <PersonaActivationModal
+        tokenId={tablet.tokenId}
+        metadata={meta}
+        open={chatModalOpen}
+        onClose={() => setChatModalOpen(false)}
+      />
 
       <TributeOverlay
         tokenId={tablet.tokenId}
@@ -323,15 +333,31 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         <fog attach="fog" args={["#0d0a08", 6, 25]} />
 
         {/* 一盞微弱環境光,避免完全黑暗 */}
-        <ambientLight intensity={0.15} color="#ffd9a8" />
+        <ambientLight intensity={0.18} color="#ffe2c0" />
 
         {/* 中央壇前主光源:暖橘色,有閃爍 */}
         <FlickerLight position={[0, 3, 1.5]} color="#ffaa55" intensity={2.2} />
         <FlickerLight position={[-1.2, 1, 1.2]} color="#ffaa55" intensity={0.8} />
         <FlickerLight position={[1.2, 1, 1.2]} color="#ffaa55" intensity={0.8} />
+        {/* 遺照聚光燈:現實靈堂遺照永遠是最亮的視覺焦點 */}
+        <PortraitSpot />
 
         {/* 主場景 */}
         <Hall />
+        <Backdrop />
+        <Couplets />
+        <FlowerBank />
+        {/* 花圈立架:兩側各兩座,前後錯落、微向中央傾斜 */}
+        <Wreath position={[-3.3, 0, -1.6]} rotationY={0.35} />
+        <Wreath position={[-4.1, 0, -0.5]} rotationY={0.5} />
+        <Wreath position={[3.3, 0, -1.6]} rotationY={-0.35} />
+        <Wreath position={[4.1, 0, -0.5]} rotationY={-0.5} />
+        {/* 高腳立燭 + 白燈籠 */}
+        <TallCandle position={[-1.9, 0, -0.6]} />
+        <TallCandle position={[1.9, 0, -0.6]} />
+        <Lantern position={[-3.2, 4.7, -1.2]} />
+        <Lantern position={[3.2, 4.7, -1.2]} />
+        <CarpetAndCushion />
         <Altar incenseLit={incenseLit} />
         <Guide name={shortName(meta, tablet.tokenId)} />
         {showXiaojing ? <Xiaojing /> : null}
@@ -393,6 +419,389 @@ function Hall(): React.ReactElement {
   );
 }
 
+// ─── 仿真靈堂陳設 ──────────────────────────────────────────────────────
+
+/** 簡單的種子偽隨機 (mulberry32):場景擺設要每次 render 一致,不能用 Math.random。 */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 建 CanvasTexture 的小工具 (畫摺痕 / 奠字 / 輓聯都靠它,免載字型檔)。 */
+function makeCanvasTexture(
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+  w = 512,
+  h = 512,
+): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (ctx) draw(ctx, w, h);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  return tex;
+}
+
+const CJK_SERIF = '"Noto Serif TC", "PMingLiU", "MingLiU", "SimSun", serif';
+
+/** 遺照聚光燈:現實靈堂遺照是全場最亮焦點。target 要手動指向遺照。 */
+function PortraitSpot(): React.ReactElement {
+  const ref = React.useRef<THREE.SpotLight>(null);
+  React.useEffect(() => {
+    const light = ref.current;
+    if (!light) return;
+    light.target.position.set(0, 3, -2.85);
+    light.target.updateMatrixWorld();
+  }, []);
+  return (
+    <spotLight
+      ref={ref}
+      position={[0, 5.6, 2.2]}
+      angle={0.42}
+      penumbra={0.7}
+      intensity={2.4}
+      color="#ffe6bd"
+      distance={14}
+      decay={1.2}
+    />
+  );
+}
+
+/** 後方白布幔 (打摺) + 中央「奠」字圓匾。 */
+function Backdrop(): React.ReactElement {
+  // 打摺:亮暗相間的縱向 sine 條紋,重複貼滿整幅布幔。
+  const pleats = React.useMemo(() => {
+    const tex = makeCanvasTexture(
+      (ctx, w, h) => {
+        for (let x = 0; x < w; x++) {
+          const k = (Math.sin((x / w) * Math.PI * 16) + 1) / 2; // 8 摺/張
+          const v = 205 + k * 38;
+          ctx.fillStyle = `rgb(${v}, ${v - 4}, ${v - 18})`;
+          ctx.fillRect(x, 0, 1, h);
+        }
+      },
+      512,
+      64,
+    );
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.set(5, 1);
+    return tex;
+  }, []);
+
+  // 「奠」字圓匾:白底黑字雙圈,告別式的標準視覺。
+  const medallion = React.useMemo(
+    () =>
+      makeCanvasTexture((ctx, w, h) => {
+        const cx = w / 2;
+        const cy = h / 2;
+        ctx.clearRect(0, 0, w, h);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 240, 0, Math.PI * 2);
+        ctx.fillStyle = "#f7f4ea";
+        ctx.fill();
+        ctx.lineWidth = 14;
+        ctx.strokeStyle = "#1d1d24";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 232, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 208, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "#15151b";
+        ctx.font = `300px ${CJK_SERIF}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("奠", cx, cy + 14);
+      }),
+    [],
+  );
+
+  return (
+    <group>
+      {/* 布幔本體 (蓋住整面後牆) */}
+      <mesh position={[0, 2.95, -2.96]}>
+        <planeGeometry args={[9.8, 5.8]} />
+        <meshStandardMaterial map={pleats} roughness={0.92} />
+      </mesh>
+      {/* 布幔頂部深色簾頭 */}
+      <mesh position={[0, 5.62, -2.94]}>
+        <planeGeometry args={[9.8, 0.55]} />
+        <meshStandardMaterial color="#3c3630" roughness={0.9} />
+      </mesh>
+      {/* 奠字圓匾 (遺照正上方) */}
+      <mesh position={[0, 5.02, -2.9]}>
+        <planeGeometry args={[1.05, 1.05]} />
+        <meshStandardMaterial map={medallion} transparent alphaTest={0.05} roughness={0.8} />
+      </mesh>
+    </group>
+  );
+}
+
+/** 輓聯:遺照兩側垂掛的直書布條。 */
+function Couplets(): React.ReactElement {
+  const make = React.useCallback(
+    (phrase: string) =>
+      makeCanvasTexture(
+        (ctx, w, h) => {
+          ctx.fillStyle = "#f6f1e3";
+          ctx.fillRect(0, 0, w, h);
+          ctx.strokeStyle = "#39332a";
+          ctx.lineWidth = 8;
+          ctx.strokeRect(10, 10, w - 20, h - 20);
+          ctx.fillStyle = "#1f2430";
+          ctx.font = `150px ${CJK_SERIF}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const chars = Array.from(phrase);
+          const step = (h - 200) / chars.length;
+          chars.forEach((c, i) => {
+            ctx.fillText(c, w / 2, 130 + step * i + step / 2);
+          });
+        },
+        256,
+        1024,
+      ),
+    [],
+  );
+  const left = React.useMemo(() => make("音容宛在"), [make]);
+  const right = React.useMemo(() => make("風範長存"), [make]);
+
+  return (
+    <group>
+      {[
+        { x: -1.95, tex: left },
+        { x: 1.95, tex: right },
+      ].map(({ x, tex }) => (
+        <group key={x} position={[x, 2.95, -2.9]}>
+          {/* 掛軸橫桿 */}
+          <mesh position={[0, 1.78, 0]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.025, 0.025, 0.78, 10]} />
+            <meshStandardMaterial color="#4a3520" roughness={0.6} />
+          </mesh>
+          <mesh>
+            <planeGeometry args={[0.62, 3.45]} />
+            <meshStandardMaterial map={tex} roughness={0.85} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** 花山:遺照下方層層堆疊的白黃菊花 (instanced,免上百個 draw call)。 */
+function FlowerBank(): React.ReactElement {
+  const ref = React.useRef<THREE.InstancedMesh>(null);
+
+  const TIERS = React.useMemo(
+    () => [
+      { top: 1.5, z: -2.55, n: 30, half: 2.45 },
+      { top: 1.0, z: -2.05, n: 34, half: 2.65 },
+      { top: 0.55, z: -1.55, n: 38, half: 2.85 },
+    ],
+    [],
+  );
+
+  const blobs = React.useMemo(() => {
+    const rand = mulberry32(7);
+    const palette = [
+      new THREE.Color("#f2efe2"), // 白菊
+      new THREE.Color("#f2efe2"),
+      new THREE.Color("#e3bd4a"), // 黃菊
+      new THREE.Color("#d9a93f"),
+      new THREE.Color("#46603a"), // 葉
+    ];
+    const out: Array<{ x: number; y: number; z: number; s: number; color: THREE.Color }> = [];
+    for (const tier of TIERS) {
+      for (let i = 0; i < tier.n; i++) {
+        const t = tier.n === 1 ? 0.5 : i / (tier.n - 1);
+        out.push({
+          x: -tier.half + t * tier.half * 2 + (rand() - 0.5) * 0.12,
+          y: tier.top + 0.08 + (rand() - 0.5) * 0.08,
+          z: tier.z + (rand() - 0.5) * 0.2,
+          s: 0.8 + rand() * 0.5,
+          color: palette[Math.floor(rand() * palette.length)] ?? palette[0]!,
+        });
+      }
+    }
+    return out;
+  }, [TIERS]);
+
+  React.useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    const dummy = new THREE.Object3D();
+    blobs.forEach((b, i) => {
+      dummy.position.set(b.x, b.y, b.z);
+      dummy.scale.setScalar(b.s);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      mesh.setColorAt(i, b.color);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [blobs]);
+
+  return (
+    <group>
+      {/* 花架階梯 (深色,讓花看起來有支撐) */}
+      {TIERS.map((tier) => (
+        <mesh key={tier.top} position={[0, tier.top / 2, tier.z]} castShadow receiveShadow>
+          <boxGeometry args={[tier.half * 2 + 0.5, tier.top, 0.5]} />
+          <meshStandardMaterial color="#14100b" roughness={1} />
+        </mesh>
+      ))}
+      <instancedMesh ref={ref} args={[undefined, undefined, blobs.length]} castShadow>
+        <sphereGeometry args={[0.1, 10, 10]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.85} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+/** 花圈立架:三腳架 + 花環 + 白緞帶,告別式門面標配。 */
+function Wreath({
+  position,
+  rotationY,
+}: {
+  position: [number, number, number];
+  rotationY: number;
+}): React.ReactElement {
+  const flowers = React.useMemo(() => {
+    const rand = mulberry32(Math.round(position[0] * 31 + position[2] * 17));
+    return Array.from({ length: 14 }, (_, i) => {
+      const a = (i / 14) * Math.PI * 2;
+      return {
+        x: Math.cos(a) * 0.46,
+        y: Math.sin(a) * 0.46,
+        s: 0.8 + rand() * 0.4,
+        white: rand() > 0.45,
+      };
+    });
+  }, [position]);
+
+  return (
+    <group position={position} rotation={[0, rotationY, 0]}>
+      {/* 三腳架 */}
+      {[-0.16, 0.16].map((dx) => (
+        <mesh key={dx} position={[dx, 0.72, -0.05]} rotation={[0.06, 0, dx > 0 ? -0.2 : 0.2]}>
+          <cylinderGeometry args={[0.018, 0.018, 1.5, 8]} />
+          <meshStandardMaterial color="#2c2520" roughness={0.8} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.72, -0.18]} rotation={[-0.22, 0, 0]}>
+        <cylinderGeometry args={[0.018, 0.018, 1.5, 8]} />
+        <meshStandardMaterial color="#2c2520" roughness={0.8} />
+      </mesh>
+      {/* 花環 (綠底圈 + 一圈花) */}
+      <group position={[0, 1.42, 0.02]}>
+        <mesh>
+          <torusGeometry args={[0.46, 0.09, 8, 28]} />
+          <meshStandardMaterial color="#3c5732" roughness={0.95} />
+        </mesh>
+        {flowers.map((f, i) => (
+          <mesh key={i} position={[f.x, f.y, 0.07]} scale={f.s}>
+            <sphereGeometry args={[0.07, 8, 8]} />
+            <meshStandardMaterial color={f.white ? "#f2efe2" : "#e3bd4a"} roughness={0.85} />
+          </mesh>
+        ))}
+      </group>
+      {/* 白緞帶 */}
+      {[-0.16, 0.16].map((dx) => (
+        <mesh key={dx} position={[dx, 0.62, 0.08]} rotation={[0, 0, dx > 0 ? -0.07 : 0.07]}>
+          <planeGeometry args={[0.15, 0.75]} />
+          <meshStandardMaterial color="#f3efe2" roughness={0.9} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** 高腳立燭:壇前兩側的長明燭。 */
+function TallCandle({ position }: { position: [number, number, number] }): React.ReactElement {
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.04, 0]} castShadow>
+        <cylinderGeometry args={[0.14, 0.18, 0.08, 16]} />
+        <meshStandardMaterial color="#3a2b1a" metalness={0.35} roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0.68, 0]}>
+        <cylinderGeometry args={[0.03, 0.04, 1.25, 10]} />
+        <meshStandardMaterial color="#4a3724" metalness={0.3} roughness={0.55} />
+      </mesh>
+      <mesh position={[0, 1.32, 0]}>
+        <cylinderGeometry args={[0.09, 0.06, 0.04, 12]} />
+        <meshStandardMaterial color="#3a2b1a" metalness={0.35} roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 1.5, 0]} castShadow>
+        <cylinderGeometry args={[0.045, 0.05, 0.32, 12]} />
+        <meshStandardMaterial color="#e8d5a8" roughness={0.7} />
+      </mesh>
+      <Flame3D position={[0, 1.72, 0]} />
+    </group>
+  );
+}
+
+/** 白燈籠:懸在兩側上方,微微發光。 */
+function Lantern({ position }: { position: [number, number, number] }): React.ReactElement {
+  return (
+    <group position={position}>
+      {/* 吊繩 */}
+      <mesh position={[0, 0.78, 0]}>
+        <cylinderGeometry args={[0.012, 0.012, 0.9, 6]} />
+        <meshStandardMaterial color="#211b14" />
+      </mesh>
+      {/* 燈籠本體 */}
+      <mesh scale={[1, 1.18, 1]}>
+        <sphereGeometry args={[0.34, 20, 16]} />
+        <meshStandardMaterial
+          color="#f3ead6"
+          emissive="#ffefcf"
+          emissiveIntensity={0.4}
+          roughness={0.8}
+        />
+      </mesh>
+      {/* 上下黑蓋 */}
+      <mesh position={[0, 0.42, 0]}>
+        <cylinderGeometry args={[0.12, 0.16, 0.07, 12]} />
+        <meshStandardMaterial color="#241e16" />
+      </mesh>
+      <mesh position={[0, -0.42, 0]}>
+        <cylinderGeometry args={[0.16, 0.12, 0.07, 12]} />
+        <meshStandardMaterial color="#241e16" />
+      </mesh>
+    </group>
+  );
+}
+
+/** 壇前紅毯 + 跪墊。 */
+function CarpetAndCushion(): React.ReactElement {
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 2.2]} receiveShadow>
+        <planeGeometry args={[1.9, 5.2]} />
+        <meshStandardMaterial color="#5e1c16" roughness={1} />
+      </mesh>
+      {/* 跪墊 (金邊紅墊) */}
+      <mesh position={[0, 0.07, 2.35]} castShadow receiveShadow>
+        <boxGeometry args={[0.85, 0.12, 0.55]} />
+        <meshStandardMaterial color="#8a2a20" roughness={0.85} />
+      </mesh>
+      <mesh position={[0, 0.135, 2.35]}>
+        <boxGeometry args={[0.87, 0.015, 0.57]} />
+        <meshStandardMaterial color="#b08a3e" metalness={0.3} roughness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
 /** 供桌、香爐、兩支蠟燭。incenseLit 控制三炷香是否發光。 */
 function Altar({ incenseLit }: { incenseLit: boolean }): React.ReactElement {
   return (
@@ -432,6 +841,59 @@ function Altar({ incenseLit }: { incenseLit: boolean }): React.ReactElement {
           </mesh>
           {/* 火焰:用一個發光小球體模擬 */}
           <Flame3D position={[0, 0.22, 0]} />
+        </group>
+      ))}
+
+      {/* 果盤一對:疊好的柑橘 (敬果) */}
+      {[-0.62, 0.62].map((x) => (
+        <group key={x} position={[x, 1.0, 0.18]}>
+          <mesh position={[0, 0.025, 0]}>
+            <cylinderGeometry args={[0.2, 0.16, 0.04, 20]} />
+            <meshStandardMaterial color="#d8d2c2" roughness={0.5} />
+          </mesh>
+          {[
+            [-0.07, 0.1, 0.04],
+            [0.07, 0.1, 0.04],
+            [0, 0.1, -0.07],
+          ].map(([fx, fy, fz], i) => (
+            <mesh key={i} position={[fx ?? 0, fy ?? 0, fz ?? 0]} castShadow>
+              <sphereGeometry args={[0.065, 12, 12]} />
+              <meshStandardMaterial color="#dd8a2c" roughness={0.6} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.2, 0]} castShadow>
+            <sphereGeometry args={[0.065, 12, 12]} />
+            <meshStandardMaterial color="#e2952f" roughness={0.6} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* 三杯清茶 (壇前正中) */}
+      {[-0.15, 0, 0.15].map((x) => (
+        <mesh key={x} position={[x, 1.035, 0.5]} castShadow>
+          <cylinderGeometry args={[0.038, 0.03, 0.06, 12]} />
+          <meshStandardMaterial color="#f0e8d6" roughness={0.4} />
+        </mesh>
+      ))}
+
+      {/* 花瓶一對 (白瓶 + 小束白黃花) */}
+      {[-0.85, 0.85].map((x) => (
+        <group key={x} position={[x, 1.0, 0.05]}>
+          <mesh position={[0, 0.14, 0]} castShadow>
+            <cylinderGeometry args={[0.05, 0.07, 0.28, 14]} />
+            <meshStandardMaterial color="#ece6d6" roughness={0.45} />
+          </mesh>
+          {[
+            [0, 0.34, 0, "#f2efe2"],
+            [-0.05, 0.31, 0.03, "#e3bd4a"],
+            [0.05, 0.3, -0.02, "#f2efe2"],
+            [0.02, 0.36, 0.04, "#46603a"],
+          ].map(([fx, fy, fz, c], i) => (
+            <mesh key={i} position={[Number(fx), Number(fy), Number(fz)]}>
+              <sphereGeometry args={[0.04, 8, 8]} />
+              <meshStandardMaterial color={String(c)} roughness={0.85} />
+            </mesh>
+          ))}
         </group>
       ))}
     </group>
@@ -490,6 +952,20 @@ function PortraitFrame({ src, name }: { src: string; name: string }): React.Reac
           <meshStandardMaterial color="#1a1208" />
         )}
       </mesh>
+      {/* 黑紗緞帶:披在遺照頂部,左右垂下 — 現實遺照的標誌性元素 */}
+      <mesh position={[0, 1.42, 0.03]} rotation={[0, 0, 0.02]}>
+        <planeGeometry args={[2.6, 0.16]} />
+        <meshStandardMaterial color="#101010" roughness={0.85} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[-1.18, 0.75, 0.03]} rotation={[0, 0, 0.32]}>
+        <planeGeometry args={[0.17, 1.55]} />
+        <meshStandardMaterial color="#101010" roughness={0.85} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[1.18, 0.75, 0.03]} rotation={[0, 0, -0.32]}>
+        <planeGeometry args={[0.17, 1.55]} />
+        <meshStandardMaterial color="#101010" roughness={0.85} side={THREE.DoubleSide} />
+      </mesh>
+
       {/* 姓名橫幅 */}
       <mesh position={[0, -1.7, 0.01]}>
         <planeGeometry args={[2.6, 0.4]} />

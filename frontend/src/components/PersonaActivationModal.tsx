@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * 數位分身啟動模式選擇 Modal
+ * 數位分身互動模式選擇 Modal
  *
- * 使用者按下「啟動數位分身互動」會彈出這個 Modal,提供兩種啟動方式:
- *   1. 親身打造 (本地離線訓練)        — 目前 disabled,待離線 pipeline 完工
- *   2. 雲端即時喚起 (cloud API)       — 主路徑,直接打 OpenAI/Anthropic 等
+ * 使用者按下「啟動數位分身互動」會彈出這個 Modal,選擇互動形式:
+ *   1. 純文字對談            — 無聲音、無人像,安靜的文字往返
+ *   2. 文字對談 + 聲音人像   — 打字輸入,分身以本人聲音與 3D 人像回應
+ *   3. 語音對話 + 聲音人像   — 全螢幕人像,直接用麥克風跟分身說話
  *
- * 開啟時會 GET /api/personas/cloud-status 詢問 backend,根據哪些 .env
- * key 已設定來決定卡片是否可點擊與顯示哪個 provider 的徽章。
+ * 選定後 router.push 到 /tablet/[tokenId]/chat?ui=text|avatar|voice。
+ * 開啟時會 GET /api/personas/cloud-status 詢問 backend,根據對話 / 人像
+ * 服務是否就緒決定卡片是否可點。
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Cpu, Cloud, X, AlertCircle } from "lucide-react";
+import { MessageSquare, ScanFace, Mic, X, AlertCircle } from "lucide-react";
 import type { TabletMetadata } from "@shared/types/tablet";
 
 import { Button } from "@/components/ui/Button";
@@ -64,7 +66,16 @@ export function PersonaActivationModal({ tokenId, metadata, open, onClose }: Pro
 
   if (!open) return null;
 
-  const cloudReady = status?.chat ?? false;
+  const chatReady = status?.chat ?? false;
+  const avatarReady = status?.avatar ?? false;
+  // 語音對話要 STT(麥克風辨識)+ 人像;STT 走雲端 chat key,所以兩者都要就緒。
+  const voiceReady = avatarReady && chatReady;
+  const hasVoiceClone = !!metadata?.dsas?.avatar?.voiceLabel;
+
+  const go = (ui: "text" | "avatar" | "voice"): void => {
+    router.push(`/tablet/${tokenId}/chat?ui=${ui}`);
+    onClose();
+  };
 
   return (
     <div
@@ -75,7 +86,7 @@ export function PersonaActivationModal({ tokenId, metadata, open, onClose }: Pro
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-3xl rounded-lg bg-paper shadow-2xl"
+        className="relative w-full max-w-4xl rounded-lg bg-paper shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -92,64 +103,67 @@ export function PersonaActivationModal({ tokenId, metadata, open, onClose }: Pro
             喚起 {displayName(metadata, tokenId)} 的記憶
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
-            請選擇要以哪種方式,讓這份記憶重新與您交談。
+            請選擇要以哪種形式,讓這份記憶重新與您交談。
           </p>
         </div>
 
-        <div className="grid gap-4 p-6 sm:grid-cols-2">
+        <div className="grid gap-4 p-6 sm:grid-cols-3">
           <ChoiceCard
-            icon={<Cpu className="h-5 w-5" aria-hidden />}
-            title="親身打造的記憶"
-            tag="尚未開放"
-            disabled
+            icon={<MessageSquare className="h-5 w-5" aria-hidden />}
+            title="純文字對談"
+            tag={chatReady ? "最快開始" : "未配置"}
+            disabled={loadingStatus || !chatReady}
             description={
               <>
-                以家人留下的影音、信件、對話為基礎,在自己的設備上訓練專屬模型,讓記憶更貼近本人原貌。
+                安靜的文字往返,沒有聲音與人像。適合想慢慢打字、慢慢讀的時刻。
                 <span className="mt-2 block text-xs text-ink-muted">
-                  此功能仍在測試中。目前需要較高配置的設備與時間,我們很快會準備好,請稍候。
+                  回覆會參考他留下的對話紀錄與親友分享的回憶。
                 </span>
               </>
             }
-            onClick={() => undefined}
+            onClick={() => go("text")}
           />
           <ChoiceCard
-            icon={<Cloud className="h-5 w-5" aria-hidden />}
-            title="雲端即時喚起"
-            tag={cloudReady ? "推薦" : "未配置"}
-            disabled={loadingStatus || !cloudReady}
-            highlight={cloudReady}
+            icon={<ScanFace className="h-5 w-5" aria-hidden />}
+            title="文字對談・聲音與人像"
+            tag={avatarReady ? "推薦" : "未配置"}
+            disabled={loadingStatus || !avatarReady}
+            highlight={avatarReady}
             description={
               <>
-                透過雲端服務,將塔位中保留的故事與影像,即刻轉化為一場與摯愛的對談。無需等待。
-                <ul className="mt-2 space-y-0.5 text-xs text-ink-muted">
-                  <li className="flex items-center gap-1.5">
-                    <Dot ok={status?.chat ?? false} /> 文字對話
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <Dot ok={status?.voice ?? false} /> 語音回應
-                    {status?.voiceProvider === "elevenlabs" ? "(高品質)" : ""}
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <Dot ok={status?.image ?? false} /> 影像懷想
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <Dot ok={status?.video ?? false} /> 短片追憶 {status?.video ? "" : "(需設定 FAL_API_KEY)"}
-                  </li>
-                </ul>
+                打字輸入,分身會以{hasVoiceClone ? "本人克隆的聲音" : "聲音"}與 3D 人像回應你。
+                <span className="mt-2 block text-xs text-ink-muted">
+                  {hasVoiceClone
+                    ? "已生成本人聲音,將以他的嗓音回應。"
+                    : "尚未克隆本人聲音,將先以預設嗓音回應(可至塔位頁補傳錄音)。"}
+                </span>
               </>
             }
-            onClick={() => {
-              router.push(`/tablet/${tokenId}/chat?mode=cloud`);
-              onClose();
-            }}
+            onClick={() => go("avatar")}
+          />
+          <ChoiceCard
+            icon={<Mic className="h-5 w-5" aria-hidden />}
+            title="語音對話・聲音與人像"
+            tag={voiceReady ? "最沉浸" : "未配置"}
+            disabled={loadingStatus || !voiceReady}
+            description={
+              <>
+                全螢幕人像,按住麥克風直接開口說話,像一通跨越時空的視訊電話。
+                <span className="mt-2 block text-xs text-ink-muted">
+                  需要瀏覽器麥克風權限;說完後分身會用聲音回應你。
+                </span>
+              </>
+            }
+            onClick={() => go("voice")}
           />
         </div>
 
-        {!loadingStatus && !cloudReady ? (
+        {!loadingStatus && !chatReady && !avatarReady ? (
           <div className="mx-6 mb-6 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <div>
-              雲端服務尚未就緒。請聯絡管理員確認 <code>.env</code> 已設定 <code>OPENAI_API_KEY</code>(對話 / 語音)以及選用的 <code>FAL_API_KEY</code>(影像 / 短片)。
+              互動服務尚未就緒。請聯絡管理員確認 render 渲染機已啟動,或 <code>.env</code> 已設定{" "}
+              <code>OPENAI_API_KEY</code> / <code>ANTHROPIC_API_KEY</code>(文字對談)。
             </div>
           </div>
         ) : null}
@@ -217,14 +231,5 @@ function ChoiceCard({
       </div>
       <div className="text-sm text-ink-muted">{description}</div>
     </button>
-  );
-}
-
-function Dot({ ok }: { ok: boolean }): React.ReactElement {
-  return (
-    <span
-      aria-hidden
-      className={`inline-block h-1.5 w-1.5 rounded-full ${ok ? "bg-emerald-600" : "bg-ink/30"}`}
-    />
   );
 }

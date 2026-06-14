@@ -968,7 +968,12 @@ function MemorialSettingsTab({
           <div className="flex items-center gap-3">
             <span
               className="h-12 w-16 shrink-0 rounded"
-              style={{ background: themeDef.background, border: `1px solid ${themeDef.accent}66` }}
+              style={{
+                background: themeDef.heroImage
+                  ? `url(${themeDef.heroImage}) center/cover`
+                  : themeDef.background,
+                border: `1px solid ${themeDef.accent}66`,
+              }}
             />
             <div className="flex flex-col">
               <span className="text-sm text-ink">
@@ -1020,7 +1025,12 @@ function MemorialSettingsTab({
                   >
                     <span
                       className="h-10 w-14 rounded"
-                      style={{ background: t.background, border: `1px solid ${t.accent}55` }}
+                      style={{
+                        background: t.heroImage
+                          ? `url(${t.heroImage}) center/cover`
+                          : t.background,
+                        border: `1px solid ${t.accent}55`,
+                      }}
                     />
                     <span className="text-ink-muted">{t.label}</span>
                   </button>

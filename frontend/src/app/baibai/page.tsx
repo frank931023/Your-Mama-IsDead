@@ -18,20 +18,19 @@
  */
 import * as React from "react";
 import Link from "next/link";
-import { ChevronLeft, Loader2, Wind, Flame } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Wind, Flame } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { useError } from "@/components/ErrorDialog";
-import { getPublicRegistry, fetchTablet, type TabletRecord } from "@/lib/api";
+import { getPublicRegistry, type TabletRecord } from "@/lib/api";
 import { displayName, formatDate, ipfsToHttps, shortName } from "@/lib/utils";
-import { MemorialScroll } from "@/components/baibai/MemorialScroll";
 
 export default function BaiBaiPage(): React.ReactElement {
+  const router = useRouter();
   const { showError } = useError();
   const [items, setItems] = React.useState<TabletRecord[] | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [chosen, setChosen] = React.useState<TabletRecord | null>(null);
 
   const loadList = React.useCallback(() => {
     let cancelled = false;
@@ -51,27 +50,6 @@ export default function BaiBaiPage(): React.ReactElement {
   }, [showError]);
 
   React.useEffect(() => loadList(), [loadList]);
-
-  // 屋主在追悼頁批次上鏈後重新拉該塔位 (反映新 metadata.dsas.stories)。
-  const reloadChosen = React.useCallback(async (): Promise<void> => {
-    if (!chosen) return;
-    try {
-      const fresh = await fetchTablet(chosen.tokenId);
-      setChosen(fresh);
-    } catch {
-      /* 拉失敗就維持現狀 */
-    }
-  }, [chosen]);
-
-  if (chosen) {
-    return (
-      <MemorialScroll
-        tablet={chosen}
-        onExit={() => setChosen(null)}
-        onReload={() => void reloadChosen()}
-      />
-    );
-  }
 
   return (
     <div className="container-page py-12">
@@ -108,7 +86,7 @@ export default function BaiBaiPage(): React.ReactElement {
       ) : (
         <div className="mx-auto grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((t) => (
-            <SelectCard key={t.tokenId} tablet={t} onPick={() => setChosen(t)} />
+            <SelectCard key={t.tokenId} tablet={t} onPick={() => router.push(`/memorial/${t.tokenId}`)} />
           ))}
         </div>
       )}

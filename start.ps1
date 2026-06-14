@@ -61,7 +61,11 @@ if (-not $SkipMigrate) {
     Push-Location (Join-Path $root "backend")
     npx prisma generate
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "prisma generate failed" }
-    npx prisma migrate dev --name auto
+    # migrate deploy (不是 migrate dev):只套用 pending migrations,不做 schema diff。
+    # migrate dev 會把 Prisma schema 表達不了的 hnsw 向量索引 (MemoryChunk) 誤判成
+    # drift 而自動生成 DROP INDEX。要改 schema 時請手寫 migration 或用
+    # `npx prisma migrate dev --create-only` 並檢查生成的 SQL。
+    npx prisma migrate deploy
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "prisma migrate failed" }
     Pop-Location
 }

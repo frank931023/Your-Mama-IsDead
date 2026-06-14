@@ -2,21 +2,28 @@
  * 線上靈堂留言板 (Tributes) HTTP 路由
  *
  * 端點:
- *   GET  /api/tributes/:tokenId        列出某座塔位的所有留言(時間倒序)
- *   POST /api/tributes/:tokenId        新增一則留言(可匿名,不要求 SIWE 登入)
+ *   GET    /api/tributes/:tokenId             列出某座塔位的所有留言(時間倒序)
+ *   POST   /api/tributes/:tokenId             新增一則留言(可匿名,不要求 SIWE 登入)
+ *   DELETE /api/tributes/:tokenId/:tributeId  屋主:刪除不當留言(燈塔典藏管理頁用)
  *
  * 設計重點:
  *   - 留言不要求登入,任何訪客都能祭拜(符合線上靈堂的「來客即賓」精神)
  *   - 但有連錢包者會把地址寫進來,家屬能辨識自家人 vs 訪客
- *   - 留言不可變:沒有 PUT/DELETE,符合「祭拜上香一次就是一次」的儀式感
+ *   - 留言沒有編輯(沒有 PUT),「祭拜上香一次就是一次」;但屋主可以移除
+ *     不當留言 — 哀悼版是公開的,家屬需要最低限度的管理權
  */
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
+import { requireAuth, requireOwner } from "../auth/middleware.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u, "tokenId must be base-10"),
+});
+
+const TributeIdParam = TokenIdParam.extend({
+  tributeId: z.string().min(1),
 });
 
 /** 供品小物類型;預設 note(純留言)。 */
@@ -99,4 +106,26 @@ export const tributeRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     });
     return reply.code(201).send(serialize(created));
   });
+
+  // DELETE /api/tributes/:tokenId/:tributeId — 屋主刪除不當留言
+  app.delete(
+    "/:tokenId/:tributeId",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TributeIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_params" });
+
+      const tokenId = BigInt(params.data.tokenId);
+      // 確認留言屬於這座塔位 (避免越權刪別座的)。
+      const existing = await prisma.tribute.findUnique({
+        where: { id: params.data.tributeId },
+      });
+      if (!existing || existing.tokenId !== tokenId) {
+        return reply.code(404).send({ error: "tribute_not_found" });
+      }
+
+      await prisma.tribute.delete({ where: { id: params.data.tributeId } });
+      return reply.code(204).send();
+    },
+  );
 };

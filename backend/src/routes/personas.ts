@@ -24,22 +24,100 @@ const TokenIdParam = z.object({
 
 /** cosine 距離大於此值的命中視為「不夠相關」丟掉 (e5 normalize 後,經驗閾值)。 */
 const MEMORY_MAX_DISTANCE = 0.62;
+/**
+ * 照片要在對話中浮現的門檻,比文字更嚴:在靈堂場景放出不相關的照片,
+ * 情感傷害遠大於不放 — 寧缺勿錯。
+ */
+const MEDIA_MAX_DISTANCE = 0.55;
+/** 單輪回覆最多浮現幾張照片。 */
+const MEDIA_MAX_PER_TURN = 2;
+
+/** 本輪要隨回覆浮現的照片 (story 命中附帶的)。 */
+export interface MemoryMedia {
+  /** ipfs:// uri */
+  uri: string;
+  /** 照片所屬回憶的摘要 (給前端當卡片說明、給 LLM 知道有這張照片)。 */
+  caption: string;
+  source: "story";
+}
+
+interface MemoryInjection {
+  block: string | null;
+  /** 通過閾值、實際注入 prompt 的片段數。 */
+  usedCount: number;
+  media: MemoryMedia[];
+}
 
 /**
- * 把檢索到的記憶片段組成一段可塞進 persona system prompt 的文字。
- * 命中為空回 null (呼叫方就維持純 metadata 的 prompt)。
+ * 把檢索到的記憶片段組成可塞進 persona system prompt 的文字,並挑出
+ * 可隨回覆浮現的照片。兩種來源分開呈現:
+ *   - chatlog: 逝者「本人說過的話」→ 模仿語氣、可當自己的記憶
+ *   - story:   「親友分享的回憶」→ 是別人對你的記憶,可自然提及
+ *     (「小華有跟我提過…」),但不能當成自己說過的話照唸
+ * 命中為空時 block 回 null (呼叫方維持純 metadata 的 prompt)。
  */
-function buildMemoryBlock(hits: MemoryHit[], name: string): string | null {
+function buildMemoryInjection(hits: MemoryHit[], name: string): MemoryInjection {
   const relevant = hits.filter((h) => h.distance <= MEMORY_MAX_DISTANCE);
-  if (relevant.length === 0) return null;
-  const lines = relevant.map((h) => `- 「${h.text.replace(/\s+/g, " ").trim()}」`);
-  return [
-    "",
-    `--- ${name} 本人說過的話 (從生前對話紀錄檢索,供你參考語氣與內容) ---`,
-    "下面是與當前話題相關的真實片段。回答時請貼近這些話的語氣、用詞、立場;",
-    "若片段裡有具體事實就用上,但不要逐字照唸或硬湊;沒有相關片段時照常回答即可。",
-    ...lines,
-  ].join("\n");
+  const chatlogHits = relevant.filter((h) => h.kind === "chatlog");
+  const storyHits = relevant.filter((h) => h.kind === "story");
+
+  const sections: string[] = [];
+
+  if (chatlogHits.length > 0) {
+    sections.push(
+      [
+        `--- ${name} 本人說過的話 (從生前對話紀錄檢索,供你參考語氣與內容) ---`,
+        "下面是與當前話題相關的真實片段。回答時請貼近這些話的語氣、用詞、立場;",
+        "若片段裡有具體事實就用上,但不要逐字照唸或硬湊;沒有相關片段時照常回答即可。",
+        ...chatlogHits.map((h) => `- 「${h.text.replace(/\s+/g, " ").trim()}」`),
+      ].join("\n"),
+    );
+  }
+
+  if (storyHits.length > 0) {
+    sections.push(
+      [
+        `--- 親友在哀悼版分享的、關於你 (${name}) 的回憶 ---`,
+        "這些是「別人」寫下的對你的記憶,不是你說過的話。你可以把它們當作確實",
+        "發生過的事自然帶入 (例如「對啊,那次…」),也可以提到是誰記得這件事;",
+        "但不要把這些文字當成自己的原話照唸,口吻仍要是你自己。",
+        ...storyHits.map((h) => {
+          const who = h.speaker ? ` (${h.speaker} 分享)` : "";
+          return `- ${h.text.replace(/\s+/g, " ").trim()}${who}`;
+        }),
+      ].join("\n"),
+    );
+  }
+
+  // 照片:story 命中且距離夠近才浮現;同一張只出一次,最多 MEDIA_MAX_PER_TURN 張。
+  const media: MemoryMedia[] = [];
+  for (const h of storyHits) {
+    if (!h.mediaUri || h.distance > MEDIA_MAX_DISTANCE) continue;
+    if (media.some((m) => m.uri === h.mediaUri)) continue;
+    media.push({
+      uri: h.mediaUri,
+      caption: h.text.replace(/\s+/g, " ").trim().slice(0, 120),
+      source: "story",
+    });
+    if (media.length >= MEDIA_MAX_PER_TURN) break;
+  }
+
+  if (media.length > 0) {
+    sections.push(
+      [
+        "--- 本輪會隨你的回覆浮現的老照片 ---",
+        "下面這(些)張回憶照片會在你回覆時顯示給對方看。請在回覆中自然地呼應它",
+        "(例如「你看,就是這張…」),不要描述系統或照片機制本身。",
+        ...media.map((m) => `- ${m.caption}`),
+      ].join("\n"),
+    );
+  }
+
+  return {
+    block: sections.length > 0 ? `\n${sections.join("\n\n")}` : null,
+    usedCount: relevant.length,
+    media,
+  };
 }
 
 function ensureCompute(reply: FastifyReply): string | null {
@@ -174,18 +252,19 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
       let prompt = buildPersonaSystemPrompt(metadata);
       let memoryUsed = 0;
+      let media: MemoryMedia[] = [];
 
       const q = (request.query as { q?: unknown })?.q;
       if (typeof q === "string" && q.trim()) {
         try {
           const total = await memoryCount(tokenId);
-          const hits = await retrieveMemory(tokenId, q, 4);
+          const hits = await retrieveMemory(tokenId, q);
           const name = metadata.dsas.deceased?.name || metadata.name || "他";
-          const passed = hits.filter((h) => h.distance <= MEMORY_MAX_DISTANCE);
-          const block = buildMemoryBlock(hits, name);
-          if (block) {
-            prompt += `\n${block}`;
-            memoryUsed = passed.length;
+          const injection = buildMemoryInjection(hits, name);
+          if (injection.block) {
+            prompt += injection.block;
+            memoryUsed = injection.usedCount;
+            media = injection.media;
           }
           // ── RAG 可觀測性:在後端 console 印出本輪檢索實況 ──────────────────
           // grep "[RAG]" 看每一輪:查詢、索引總數、命中片段+距離、是否注入。
@@ -196,18 +275,20 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
               indexedChunks: total,
               threshold: MEMORY_MAX_DISTANCE,
               injected: memoryUsed,
+              media: media.length,
               hits: hits.map((h) => ({
+                kind: h.kind,
                 dist: Number(h.distance.toFixed(3)),
                 pass: h.distance <= MEMORY_MAX_DISTANCE,
                 text: h.text.replace(/\s+/g, " ").slice(0, 60),
               })),
             },
-            `[RAG] token#${tokenId} q="${q.slice(0, 40)}" → indexed=${total} injected=${memoryUsed}/${hits.length}`,
+            `[RAG] token#${tokenId} q="${q.slice(0, 40)}" → indexed=${total} injected=${memoryUsed}/${hits.length} media=${media.length}`,
           );
           if (total === 0) {
             request.log.warn(
               { tokenId: tokenId.toString() },
-              `[RAG] token#${tokenId} 索引為空 — 還沒上傳對話紀錄 / 還沒 reindex,本輪用純 metadata persona`,
+              `[RAG] token#${tokenId} 索引為空 — 還沒上傳對話紀錄、也沒有已核可的回憶 (或還沒 reindex),本輪用純 metadata persona`,
             );
           }
         } catch (err) {
@@ -218,7 +299,7 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         request.log.info({ tokenId: tokenId.toString() }, `[RAG] token#${tokenId} 本輪無 query (前端沒帶 ?q=) — 純 metadata persona`);
       }
 
-      return reply.send({ prompt, memoryUsed });
+      return reply.send({ prompt, memoryUsed, media });
     },
   );
 
@@ -242,12 +323,12 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         const result = await reindexMemory(tokenId, metadata);
         request.log.info(
           { ...result, ms: Date.now() - t0 },
-          `[RAG] reindex token#${tokenId}: chatlogs=${result.chatlogsProcessed} 片段=${result.piecesIndexed} skipped=${result.skipped.length} (${((Date.now() - t0) / 1000).toFixed(1)}s)`,
+          `[RAG] reindex token#${tokenId}: chatlogs=${result.chatlogsProcessed} stories=${result.storiesProcessed} 片段=${result.piecesIndexed} skipped=${result.skipped.length} (${((Date.now() - t0) / 1000).toFixed(1)}s)`,
         );
         if (result.piecesIndexed === 0) {
           request.log.warn(
             { tokenId: tokenId.toString(), skipped: result.skipped },
-            `[RAG] reindex token#${tokenId} 索引了 0 段 — 可能沒上傳對話紀錄,或逝者名字對不上 chatlog 裡的發話者 (檢查 metadata.deceased.name 與對話檔裡的名字)`,
+            `[RAG] reindex token#${tokenId} 索引了 0 段 — 可能沒上傳對話紀錄、沒有已核可的回憶,或逝者名字對不上 chatlog 裡的發話者 (檢查 metadata.deceased.name 與對話檔裡的名字)`,
           );
         }
         return reply.send(result);
@@ -314,8 +395,28 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         });
       }
 
+      // RAG:跟 LAM 模式的 persona-prompt 同一套 — 用本輪訊息檢索記憶庫
+      // (對話紀錄 + 已核可回憶),把命中片段拼進 system prompt。失敗就降級。
+      let systemPrompt = buildPersonaSystemPrompt(metadata);
+      let media: MemoryMedia[] = [];
+      try {
+        const hits = await retrieveMemory(tokenId, body.data.message);
+        const name = metadata.dsas.deceased?.name || metadata.name || "他";
+        const injection = buildMemoryInjection(hits, name);
+        if (injection.block) {
+          systemPrompt += injection.block;
+          media = injection.media;
+        }
+        request.log.info(
+          { tokenId: tokenId.toString(), injected: injection.usedCount, media: media.length },
+          `[RAG] cloud-chat token#${tokenId} injected=${injection.usedCount} media=${media.length}`,
+        );
+      } catch (err) {
+        request.log.warn({ err, tokenId: tokenId.toString() }, "[RAG] cloud-chat retrieval failed, base prompt only");
+      }
+
       const messages: ChatTurn[] = [
-        { role: "system", content: buildPersonaSystemPrompt(metadata) },
+        { role: "system", content: systemPrompt },
         ...body.data.history,
         { role: "user", content: body.data.message },
       ];
@@ -343,6 +444,10 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       request.raw.on("close", () => ctrl.abort());
 
       try {
+        // 先把本輪要浮現的回憶照片推給前端 (在 token 之前,前端可先掛上卡片)。
+        if (media.length > 0) {
+          reply.raw.write(`event: media\ndata: ${escapeSseData(JSON.stringify(media))}\n\n`);
+        }
         for await (const delta of streamPersonaChat(messages, ctrl.signal)) {
           // SSE frame format: `event: token\ndata: <text>\n\n` — matches
           // the parser in frontend/src/lib/chat-stream.ts (`parsed.type`

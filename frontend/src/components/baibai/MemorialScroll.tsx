@@ -15,11 +15,11 @@
  * 主題只套在 banner 與強調色;內容區維持乾淨淺底,確保可讀。
  */
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { ChevronLeft, MessagesSquare, Flame } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
+import { PersonaActivationModal } from "@/components/PersonaActivationModal";
 import { displayName, formatDate, ipfsToHttps, shortName } from "@/lib/utils";
 import type { TabletRecord } from "@/lib/api";
 import { getTheme } from "@/lib/memorial-themes";
@@ -41,12 +41,9 @@ const TABS: Array<{ id: MemorialTab; label: string }> = [
 interface MemorialScrollProps {
   tablet: TabletRecord;
   onExit: () => void;
-  /** 批次上鏈後 baibai 頁可重新拉一次該塔位 (metadata 變了)。 */
-  onReload?: () => void;
 }
 
-export function MemorialScroll({ tablet, onExit, onReload }: MemorialScrollProps): React.ReactElement {
-  const router = useRouter();
+export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.ReactElement {
   const { address } = useAccount();
   const meta = tablet.metadata;
   const deceased = meta?.dsas.deceased;
@@ -57,6 +54,8 @@ export function MemorialScroll({ tablet, onExit, onReload }: MemorialScrollProps
   const [tab, setTab] = React.useState<MemorialTab>("about");
   // 進入 3D 靈堂(舊版拜拜畫面):點香 / 三鞠躬 / 留言 / 紀念卡都在那裡做。
   const [hallOpen, setHallOpen] = React.useState(false);
+  // 「與他對話」→ 跟燈塔頁同一個互動形式選擇 modal (純文字 / 文字+人像 / 語音)。
+  const [activationOpen, setActivationOpen] = React.useState(false);
 
   const isOwner =
     !!address && !!tablet.owner && address.toLowerCase() === tablet.owner.toLowerCase();
@@ -97,7 +96,8 @@ export function MemorialScroll({ tablet, onExit, onReload }: MemorialScrollProps
 
       {/* ── Hero banner(上半部背景牆)──────────────────────────────────────── */}
       <header className="relative w-full overflow-hidden" style={{ minHeight: "44vh" }}>
-        {/* 背景牆:影片優先,否則漸層 */}
+        {/* 背景牆:影片 > 背景圖 (jpg/gif) > 漸層。圖載入前漸層墊底。 */}
+        <div className="absolute inset-0" style={{ background: theme.heroBg }} aria-hidden />
         {theme.heroVideo ? (
           <video
             className="absolute inset-0 h-full w-full object-cover"
@@ -108,15 +108,26 @@ export function MemorialScroll({ tablet, onExit, onReload }: MemorialScrollProps
             playsInline
             aria-hidden
           />
-        ) : (
-          <div className="absolute inset-0" style={{ background: theme.heroBg }} aria-hidden />
-        )}
+        ) : theme.heroImage ? (
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${theme.heroImage})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+            aria-hidden
+          />
+        ) : null}
         {/* 動態粒子層 */}
         <MemorialParticles kind={theme.particles} />
-        {/* 柔光暈,讓文字更易讀 */}
+        {/* 罩紗:主題自帶 overlay (photo 背景保文字可讀),缺省用柔光暈 */}
         <div
           className="absolute inset-0"
-          style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12))" }}
+          style={{
+            background:
+              theme.overlay ?? "linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12))",
+          }}
           aria-hidden
         />
 
@@ -212,7 +223,7 @@ export function MemorialScroll({ tablet, onExit, onReload }: MemorialScrollProps
                 <Button
                   size="lg"
                   variant="outline"
-                  onClick={() => router.push(`/tablet/${tablet.tokenId}/chat?mode=cloud`)}
+                  onClick={() => setActivationOpen(true)}
                   style={{ borderColor: `${theme.accent}66`, color: theme.text }}
                 >
                   <MessagesSquare className="h-5 w-5" aria-hidden />
@@ -269,9 +280,16 @@ export function MemorialScroll({ tablet, onExit, onReload }: MemorialScrollProps
         ) : null}
 
         {tab === "stories" ? (
-          <StoryBoard tablet={tablet} isOwner={isOwner} theme={boardTheme} onChainUpdated={onReload} />
+          <StoryBoard tablet={tablet} isOwner={isOwner} theme={boardTheme} />
         ) : null}
       </main>
+
+      <PersonaActivationModal
+        tokenId={tablet.tokenId}
+        metadata={meta}
+        open={activationOpen}
+        onClose={() => setActivationOpen(false)}
+      />
     </div>
   );
 }

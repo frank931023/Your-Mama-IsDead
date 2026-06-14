@@ -21,6 +21,7 @@ import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
 import { pinJSON } from "../lib/ipfs.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
+import { indexApprovedStory, removeStoryChunks } from "../lib/rag.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u, "tokenId must be base-10"),
@@ -218,6 +219,26 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         where: { id: params.data.storyId },
         data: { status: body.data.status },
       });
+
+      // RAG 同步:核可即進記憶、隱藏即移除。fire-and-forget — embedding 可能要
+      // 載模型 (首次數十秒),不擋審核回應;失敗只記 log,下次整庫 reindex 會補。
+      if (body.data.status === "APPROVED") {
+        void indexApprovedStory(tokenId, updated)
+          .then((n) =>
+            request.log.info(
+              { tokenId: tokenId.toString(), storyId: updated.id, pieces: n },
+              `[RAG] story 核可 → 索引 ${n} 段`,
+            ),
+          )
+          .catch((err) =>
+            request.log.warn({ err, storyId: updated.id }, "[RAG] story 核可後索引失敗"),
+          );
+      } else {
+        void removeStoryChunks(tokenId, updated.id).catch((err) =>
+          request.log.warn({ err, storyId: updated.id }, "[RAG] story 隱藏後移除索引失敗"),
+        );
+      }
+
       return reply.send(serialize(updated));
     },
   );
@@ -239,6 +260,12 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       }
 
       await prisma.memorialStory.delete({ where: { id: params.data.storyId } });
+      // RAG 同步:刪除即移除索引 (純 DB delete,直接等)。
+      try {
+        await removeStoryChunks(tokenId, params.data.storyId);
+      } catch (err) {
+        request.log.warn({ err, storyId: params.data.storyId }, "[RAG] story 刪除後移除索引失敗");
+      }
       return reply.code(204).send();
     },
   );

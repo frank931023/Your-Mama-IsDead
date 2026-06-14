@@ -136,18 +136,28 @@ model MemorialStory {
 /// embedding 是 multilingual-e5-small 的 384 維向量。Prisma 不原生支援 pgvector,
 /// 故用 Unsupported 宣告該欄;寫入 / 相似度查詢都走 $executeRaw / $queryRaw。
 /// sourceUri = 來源 chatlog 的 ipfs uri;重建索引時先依 tokenId 刪舊再插新。
+///
+/// ⚠ MemoryChunk_embedding_hnsw_idx (USING hnsw) 無法在 Prisma schema 表達,
+/// `prisma migrate dev` 的 diff 會把它當 drift 自動生成 DROP INDEX。日常請用
+/// `migrate deploy` (start.ps1 已改);要改 schema 請 `migrate dev --create-only`
+/// 並人工檢查生成的 SQL,刪掉誤生的 DROP INDEX 再 deploy。
 model MemoryChunk {
   id         String                      @id @default(cuid())
   tokenId    BigInt
   text       String                      @db.Text
-  /// 來源 chatlog 的 ipfs uri (重建 / 除錯用)
+  /// 來源:chatlog 為原始 chatlog 的 ipfs uri;story 為 "story:<storyId>"
   sourceUri  String
   /// 來源平台 (line/telegram/...) — 檢索結果標註用
   platform   String?
-  /// 片段裡的發話者 (通常是逝者本人) — 過濾用
+  /// 發話者:chatlog 是逝者本人;story 是投稿者顯示名
   speaker    String?
+  /// 來源類型:chatlog (逝者本人發言) | story (親友分享的回憶)
+  kind       String                      @default("chatlog")
+  /// story 附的照片 ipfs uri — 檢索命中時可在對話中浮現
+  mediaUri   String?
   embedding  Unsupported("vector(384)")?
   createdAt  DateTime                    @default(now())
 
   @@index([tokenId])
+  @@index([tokenId, kind])
 }
