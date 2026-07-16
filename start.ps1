@@ -1,14 +1,11 @@
-# One-click dev setup. Brings up infra + installs deps + migrates DB,
-# then prints the two commands for you to run in VSCode terminal panes.
+# One-click dev setup. Everything runs in docker compose now:
+# postgres / redis / minio / backend (:4000) / frontend (:3000).
 # Usage:  .\start.ps1
-#         .\start.ps1 -InfraOnly    (just docker, no install/migrate)
-#         .\start.ps1 -SkipInstall  (skip npm install)
-#         .\start.ps1 -SkipMigrate  (skip prisma migrate)
+#         .\start.ps1 -InfraOnly   (只起 postgres/redis/minio;想本機直跑
+#                                   backend/frontend 時用,見 README Manual Startup)
 
 [CmdletBinding()]
 param(
-    [switch] $SkipInstall,
-    [switch] $SkipMigrate,
     [switch] $InfraOnly
 )
 
@@ -18,72 +15,26 @@ Set-Location $root
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
-# 1) env
-Step "Loading .env"
-. (Join-Path $root "load-env.ps1")
+# backend/frontend 容器用 env_file 讀根目錄 .env,沒有它起不來
+if (-not (Test-Path (Join-Path $root ".env"))) {
+    throw ".env not found — Copy-Item .env.example .env 並填入 secrets(見 README First-Time Setup)"
+}
 
-# 2) infra
-Step "Starting infra (docker compose up -d)"
+if ($InfraOnly) {
+    Step "Starting infra only (postgres / redis / minio)"
+    docker compose up -d postgres redis minio
+    if ($LASTEXITCODE -ne 0) { throw "docker compose failed — is Docker Desktop running?" }
+    Write-Host "`nInfra up. backend/frontend 請本機直跑(見 README Manual Startup)。" -ForegroundColor Green
+    return
+}
+
+Step "Starting full stack (docker compose up -d)"
 docker compose up -d
 if ($LASTEXITCODE -ne 0) { throw "docker compose failed — is Docker Desktop running?" }
 
-# 3) wait for postgres
-Step "Waiting for postgres healthcheck"
-$deadline = (Get-Date).AddSeconds(60)
-while ((Get-Date) -lt $deadline) {
-    $health = docker inspect --format '{{.State.Health.Status}}' (docker compose ps -q postgres) 2>$null
-    if ($health -eq "healthy") { Write-Host "postgres ready." -ForegroundColor Green; break }
-    Start-Sleep -Seconds 2
-}
-if ($health -ne "healthy") { throw "postgres did not become healthy within 60s" }
-
-if ($InfraOnly) { Step "InfraOnly set — done."; return }
-
-# 4) npm install (skip if node_modules already present)
-foreach ($svc in @("backend", "frontend")) {
-    $svcPath = Join-Path $root $svc
-    $nm = Join-Path $svcPath "node_modules"
-    if ($SkipInstall) { continue }
-    if (-not (Test-Path $nm)) {
-        Step "npm install in $svc"
-        Push-Location $svcPath
-        npm install
-        if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install failed in $svc" }
-        Pop-Location
-    } else {
-        Write-Host "node_modules already present in $svc — skipping install" -ForegroundColor DarkGray
-    }
-}
-
-# 5) prisma
-if (-not $SkipMigrate) {
-    Step "prisma generate + migrate (backend)"
-    Push-Location (Join-Path $root "backend")
-    npx prisma generate
-    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "prisma generate failed" }
-    # migrate deploy (不是 migrate dev):只套用 pending migrations,不做 schema diff。
-    # migrate dev 會把 Prisma schema 表達不了的 hnsw 向量索引 (MemoryChunk) 誤判成
-    # drift 而自動生成 DROP INDEX。要改 schema 時請手寫 migration 或用
-    # `npx prisma migrate dev --create-only` 並檢查生成的 SQL。
-    npx prisma migrate deploy
-    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "prisma migrate failed" }
-    Pop-Location
-}
-
-# 6) Launch backend + frontend dev servers in their own PowerShell windows
-Step "Launching backend dev server (new window)"
-Start-Process powershell -ArgumentList @(
-    "-NoExit",
-    "-Command",
-    "Set-Location '$root\backend'; . '$root\load-env.ps1'; npm run dev"
-)
-
-Step "Launching frontend dev server (new window)"
-Start-Process powershell -ArgumentList @(
-    "-NoExit",
-    "-Command",
-    "Set-Location '$root\frontend'; . '$root\load-env.ps1'; npm run dev"
-)
-
-Write-Host "`nAll up. Backend + frontend are running in their own windows." -ForegroundColor Green
-Write-Host "Stop infra later with:  docker compose down" -ForegroundColor DarkGray
+Write-Host "`nAll up." -ForegroundColor Green
+Write-Host "  frontend  http://localhost:3000"
+Write-Host "  backend   http://localhost:4000"
+Write-Host "`n首次啟動 backend/frontend 會在容器內 npm install + prisma migrate,可能需要幾分鐘。" -ForegroundColor DarkGray
+Write-Host "看啟動進度:  docker compose logs -f backend frontend" -ForegroundColor DarkGray
+Write-Host "全部關閉:    docker compose down" -ForegroundColor DarkGray

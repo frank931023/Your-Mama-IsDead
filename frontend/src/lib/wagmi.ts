@@ -11,13 +11,15 @@
  * 注入式錢包仍能用),只是 console 會噴 Reown 403 警告。
  */
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { baseSepolia, sepolia } from "wagmi/chains";
+import { anvil, baseSepolia, sepolia } from "wagmi/chains";
 import type { Chain } from "viem";
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? "11155111");
 
-export const SUPPORTED_CHAINS = [sepolia, baseSepolia] as const satisfies readonly Chain[];
+// anvil (31337) 是本地測試鏈:admin 頁把 chain mode 切到 local 時使用。
+// 瀏覽器端 RPC 是 anvil 內建預設 http://127.0.0.1:8545(compose 有映射)。
+export const SUPPORTED_CHAINS = [sepolia, baseSepolia, anvil] as const satisfies readonly Chain[];
 
 export function getDefaultChain(): Chain {
   const found = SUPPORTED_CHAINS.find((c) => c.id === CHAIN_ID);
@@ -27,7 +29,7 @@ export function getDefaultChain(): Chain {
 export const wagmiConfig = getDefaultConfig({
   appName: "Aeterlux · 數位記憶燈塔",
   projectId: PROJECT_ID || "dsas-prototype-no-walletconnect",
-  chains: [sepolia, baseSepolia],
+  chains: [sepolia, baseSepolia, anvil],
   ssr: true,
 });
 

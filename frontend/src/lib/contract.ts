@@ -16,13 +16,11 @@ import {
 } from "wagmi";
 import type { Abi, Address } from "viem";
 
-const RAW_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "";
+import { FALLBACK_CONFIG, useContractAddress } from "./app-config";
 
-export const CONTRACT_ADDRESS: Address = (
-  RAW_ADDRESS && /^0x[0-9a-fA-F]{40}$/.test(RAW_ADDRESS)
-    ? RAW_ADDRESS
-    : "0x0000000000000000000000000000000000000000"
-) as Address;
+// 靜態 fallback(backend /api/config 不可達時用);runtime 生效地址
+// 請一律透過 useContractAddress() 取得,admin 切鏈後會自動跟上。
+export const CONTRACT_ADDRESS: Address = FALLBACK_CONFIG.contractAddress;
 
 /**
  * Minimal DigitalTablet ABI (ERC-721 + ERC-6150 subset + DSAS extras).
@@ -155,12 +153,13 @@ interface ReadOpts {
 
 /** Thin typed wrapper around wagmi's `useReadContract` for our ABI. */
 export function useDigitalTabletRead(opts: ReadOpts) {
+  const address = useContractAddress();
   // Cast through `unknown` so we can keep the helper generic across all read
   // function signatures without spelling out per-fn overloads. wagmi's stricter
   // tuple types are validated by the ABI at runtime call site.
   return useReadContract({
     abi: DIGITAL_TABLET_ABI,
-    address: CONTRACT_ADDRESS,
+    address,
     functionName: opts.functionName,
     args: opts.args as unknown as never,
     query: opts.query,

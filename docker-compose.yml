@@ -36,7 +36,72 @@ services:
     volumes:
       - minio-data:/data
 
+  # 本地模擬鏈(Foundry Anvil):admin 頁把 chain mode 切到 local 時用。
+  # --state 讓鏈狀態(部署的合約、mint 過的塔位)跨重啟保留;
+  # 要整條鏈歸零:docker compose down -v(或單刪 anvil-data volume)。
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--state", "/data/anvil-state.json"]
+    ports:
+      - "8545:8545"
+    volumes:
+      - anvil-data:/data
+
+  backend:
+    image: node:20-bookworm
+    working_dir: /app/backend
+    # 掛整個 repo root:backend 會 import ../shared/types,只掛 backend/ 會斷
+    volumes:
+      - .:/app
+      - backend-node-modules:/app/backend/node_modules
+      - backend-local-uploads:/data/local-uploads
+    env_file: .env
+    environment:
+      # 容器內連 db/redis 要走 compose service name,蓋掉 .env 裡的 localhost
+      DATABASE_URL: postgresql://dsas:dsas@postgres:5432/dsas
+      REDIS_URL: redis://redis:6379
+    # migrate deploy(不是 migrate dev):migrate dev 會把 Prisma schema 表達
+    # 不了的 hnsw 向量索引 (MemoryChunk) 誤判成 drift 而生成 DROP INDEX。
+    command: sh -c "npm install && npx prisma generate && npx prisma migrate deploy && npm run dev"
+    # npm install 途中網路逾時等暫時性失敗會讓容器退出,自動重跑即可續傳
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    image: node:20-bookworm
+    working_dir: /app/frontend
+    volumes:
+      - .:/app
+      - frontend-node-modules:/app/frontend/node_modules
+      - frontend-next:/app/frontend/.next
+    env_file: .env
+    # 若程式碼放在 Windows 檔案系統(非 WSL ext4)導致 HMR 不觸發,解開:
+    # environment:
+    #   WATCHPACK_POLLING: "true"
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
 volumes:
   postgres-data:
   redis-data:
   minio-data:
+  # node_modules 用 named volume 與宿主隔離:容器是 Linux,宿主(Windows 直跑
+  # 的人)的原生二進位(prisma engines / onnxruntime)不相容,不能共用。
+  # @xenova/transformers 的 embedding 模型快取也在這裡面,down -v 會一併清掉。
+  backend-node-modules:
+  frontend-node-modules:
+  frontend-next:
+  # storage mode = local 時的上傳落地與 anvil 鏈狀態
+  backend-local-uploads:
+  anvil-data:

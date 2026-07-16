@@ -76,6 +76,23 @@ const EnvSchema = z.object({
   SIMLI_MAX_SESSION_SECONDS: z.coerce.number().int().positive().default(600),
   SIMLI_MAX_IDLE_SECONDS: z.coerce.number().int().positive().default(180),
 
+  // ── 本地測試模式(/admin 頁可切換)──────────────────────────────
+  // ADMIN_PASSWORD:admin 頁單密碼。沒設則 admin API 整組回 503。
+  ADMIN_PASSWORD: z.string().optional(),
+  // 本地鏈(anvil)profile;chain mode 切到 "local" 時使用。
+  // LOCAL_CONTRACT_ADDRESS 預設值 = 全新 anvil 用內建帳戶 0 部署第一筆
+  // 交易的決定性地址(CREATE address 由部署者+nonce 決定)。
+  LOCAL_RPC_URL: z.string().url().default("http://anvil:8545"),
+  LOCAL_CHAIN_ID: z.coerce.number().int().positive().default(31337),
+  LOCAL_CONTRACT_ADDRESS: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .default("0x5FbDB2315678afecb367f032d93F642f64180aa3"),
+  // storage mode "local" 時檔案落地目錄(容器內路徑,掛 named volume)
+  LOCAL_UPLOAD_DIR: z.string().default("/data/local-uploads"),
+  // 組本地檔案對外 URI 用的 origin(瀏覽器要打得到)
+  PUBLIC_BACKEND_ORIGIN: z.string().url().default("http://localhost:4000"),
+
   // Self-hosted LAM render machine (YMID-RENDER-API). Reached over Tailscale.
   // Handles LLM + voice clone (IndexTTS2) + audio2expression (LAM A2E) +
   // head-pose (ARTalk) + 3DGS avatar build. When RENDER_BASE is set the

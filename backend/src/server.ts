@@ -26,8 +26,11 @@ import { personaRoutes } from "./routes/personas.js";
 import { simliRoutes } from "./routes/simli.js";
 import { avatarRoutes, avatarSessionRoutes } from "./routes/avatar.js";
 import { attachAvatarWsProxy } from "./lib/ws-proxy.js";
+import { attachCeremonyHub } from "./lib/ceremony-hub.js";
 import { tributeRoutes } from "./routes/tributes.js";
 import { storyRoutes } from "./routes/stories.js";
+import { adminRoutes } from "./routes/admin.js";
+import { getPublicConfig } from "./lib/runtime-config.js";
 import { startTrainingWorker } from "./queue/training.js";
 
 /**
@@ -70,9 +73,11 @@ export async function buildServer(): Promise<FastifyInstance> {
   app.get("/health", async () => ({
     ok: true,
     service: "@dsas/backend",
-    chainId: env.CHAIN_ID,
-    contract: env.CONTRACT_ADDRESS,
+    ...(await getPublicConfig()),
   }));
+
+  // 公開 runtime 設定:前端據此決定打哪條鏈/哪個合約(admin 切換即時生效)
+  app.get("/api/config", async () => getPublicConfig());
 
   // 各模組路由掛載:統一以 /api/<domain> 為前綴
   await app.register(authRoutes, { prefix: "/api/auth" });        // SIWE nonce + JWT 簽發
@@ -85,6 +90,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(avatarSessionRoutes, { prefix: "/api/personas" }); // (新) /:tokenId/avatar-session 簽 WS token
   await app.register(tributeRoutes, { prefix: "/api/tributes" }); // 線上靈堂留言板
   await app.register(storyRoutes, { prefix: "/api/stories" });    // 哀悼版回憶 (story)
+  await app.register(adminRoutes, { prefix: "/api/admin" });      // 單密碼 admin:模式切換 / anvil 餵 gas
 
   return app;
 }
@@ -107,6 +113,7 @@ async function main(): Promise<void> {
   // 把 avatar WebSocket 代理掛到底層 http server (浏览器连同源 localhost,绕开
   // Chrome PNA 对私有 IP WS 的拦截;后端在 tailnet 转发到渲染机)。
   attachAvatarWsProxy(app.server, app.log);
+  attachCeremonyHub(app.server, app.log);
 
   try {
     await app.listen({ port: env.BACKEND_PORT, host: env.BACKEND_HOST });

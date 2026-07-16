@@ -21,10 +21,11 @@ import { ChevronLeft, MessagesSquare, Flame } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PersonaActivationModal } from "@/components/PersonaActivationModal";
 import { displayName, formatDate, ipfsToHttps, shortName } from "@/lib/utils";
-import type { TabletRecord } from "@/lib/api";
+import type { TabletRecord, Tribute } from "@/lib/api";
 import { getTheme } from "@/lib/memorial-themes";
+import { useCeremony } from "@/lib/ceremony";
 import { playBell } from "./bell-sound";
-import { TributeBoard } from "./TributeBoard";
+import { offeringOf, TributeBoard } from "./TributeBoard";
 import { StoryBoard } from "./StoryBoard";
 import { MemorialParticles } from "./MemorialParticles";
 import { MemorialHall } from "./MemorialHall";
@@ -52,6 +53,26 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
 
   const theme = getTheme(meta?.dsas.background);
   const [tab, setTab] = React.useState<MemorialTab>("about");
+
+  // ── 線上公祭:presence + 即時供品/儀式 ─────────────────────────────
+  const [liveTribute, setLiveTribute] = React.useState<Tribute | null>(null);
+  const [liveNotice, setLiveNotice] = React.useState<string | null>(null);
+  const noticeTimer = React.useRef<number | undefined>(undefined);
+
+  const showNotice = React.useCallback((text: string) => {
+    setLiveNotice(text);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setLiveNotice(null), 5_000);
+  }, []);
+
+  const { onlineCount } = useCeremony(tablet.tokenId, {
+    onTribute: (t) => {
+      setLiveTribute(t);
+      showNotice(`${t.fromName || "有親友"} ${offeringOf(t.kind).verb}`);
+    },
+    onRitual: (ritual, name) =>
+      showNotice(`${name || "有親友"}${ritual === "bow" ? "獻上了三鞠躬" : "點燃了一炷香"}`),
+  });
   // 進入 3D 靈堂(舊版拜拜畫面):點香 / 三鞠躬 / 留言 / 紀念卡都在那裡做。
   const [hallOpen, setHallOpen] = React.useState(false);
   // 「與他對話」→ 跟燈塔頁同一個互動形式選擇 modal (純文字 / 文字+人像 / 語音)。
@@ -140,6 +161,18 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
               {formatDate(deceased?.birth?.date) || "?"} – {formatDate(deceased?.death?.date) || "?"}
               {deceased?.origin ? ` · ${deceased.origin}` : ""}
             </p>
+            {onlineCount > 0 ? (
+              <p
+                className="mt-3 inline-flex items-center gap-2 rounded-full bg-black/25 px-3 py-1 text-xs backdrop-blur-sm"
+                style={{ color: theme.heroText }}
+              >
+                <span className="relative flex h-2 w-2" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                </span>
+                {onlineCount} 位親友正在線上追思
+              </p>
+            ) : null}
           </div>
 
           {/* 頭貼白框卡 */}
@@ -240,7 +273,7 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
               <h2 className="mb-4 font-serif text-xl" style={{ color: theme.text }}>
                 留言板
               </h2>
-              <TributeBoard tokenId={tablet.tokenId} theme={boardTheme} />
+              <TributeBoard tokenId={tablet.tokenId} theme={boardTheme} liveTribute={liveTribute} />
             </section>
           </div>
         ) : null}
@@ -283,6 +316,17 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
           <StoryBoard tablet={tablet} isOwner={isOwner} theme={boardTheme} />
         ) : null}
       </main>
+
+      {/* 線上公祭:別人上香/獻供/行禮的即時通知 */}
+      {liveNotice ? (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full px-5 py-2.5 text-sm text-white shadow-2xl backdrop-blur-md animate-fade-up"
+          style={{ background: "rgba(0, 0, 0, 0.72)" }}
+        >
+          🕯 {liveNotice}
+        </div>
+      ) : null}
 
       <PersonaActivationModal
         tokenId={tablet.tokenId}

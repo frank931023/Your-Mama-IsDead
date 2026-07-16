@@ -4,13 +4,14 @@
 
 @layer base {
   :root {
-    --color-ink: 26 24 20;
-    --color-ink-soft: 44 41 37;
-    --color-paper: 246 241 231;
-    --color-paper-soft: 236 229 211;
-    --color-gold: 176 138 62;
-    --color-gold-soft: 212 178 101;
-    --color-gold-dark: 126 96 39;
+    /* 與 tailwind.config.ts 同步的 RGB 值(供任意 rgba 組合用) */
+    --color-ink: 237 229 214;
+    --color-ink-soft: 207 197 176;
+    --color-paper: 13 11 8;
+    --color-paper-soft: 24 19 16;
+    --color-gold: 201 164 94;
+    --color-gold-soft: 233 213 164;
+    --color-gold-dark: 160 125 61;
   }
 
   /* Only pin <html> to the viewport height. The <body> uses Tailwind's
@@ -21,31 +22,108 @@
      mid-content instead of sitting at the true page bottom. */
   html {
     height: 100%;
+    scrollbar-gutter: stable;
   }
 
   body {
     @apply bg-paper text-ink antialiased;
     font-family: var(--font-sans, "Noto Sans TC", "Inter", system-ui, sans-serif);
+    /* 燭光氛圍:頂部一盞暖光、兩側餘燼、往下沉入墨黑 */
     background-image:
-      radial-gradient(circle at 0% 0%, rgba(176, 138, 62, 0.06) 0, transparent 40%),
-      radial-gradient(circle at 100% 100%, rgba(26, 24, 20, 0.04) 0, transparent 40%);
+      radial-gradient(ellipse 62% 42% at 50% -12%, rgba(201, 164, 94, 0.13), transparent 62%),
+      radial-gradient(ellipse 38% 30% at 88% 2%, rgba(140, 82, 34, 0.08), transparent 58%),
+      radial-gradient(ellipse 44% 34% at 8% 6%, rgba(201, 164, 94, 0.05), transparent 60%);
+    background-attachment: fixed;
+    background-color: #0d0b08;
+  }
+
+  /* 細微膠片顆粒,壓住大面積純黑的「數位感」;pointer-events 穿透不擋操作 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   ::selection {
-    background-color: rgba(176, 138, 62, 0.35);
+    background-color: rgba(201, 164, 94, 0.45);
+    color: #0d0b08;
   }
 
   h1,
   h2,
   h3,
   h4 {
-    font-family: "Noto Serif TC", "Source Han Serif TC", ui-serif, Georgia, serif;
+    font-family: var(--font-serif, "Noto Serif TC", "Source Han Serif TC", ui-serif, Georgia, serif);
     font-weight: 600;
+    text-wrap: balance;
+  }
+
+  /* 深色細軸捲軸,hover 時透出金 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(237, 229, 214, 0.16) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    border-radius: 8px;
+    background-color: rgba(237, 229, 214, 0.16);
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(201, 164, 94, 0.45);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @layer utilities {
   .container-page {
     @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* 玻璃面板:半透墨底 + 模糊 + 宣紙白 hairline */
+  .glass-panel {
+    @apply rounded-2xl border border-ink/10 bg-paper-soft/60 shadow-ritual backdrop-blur-md;
+  }
+
+  /* 鎏金漸層字(標題強調用) */
+  .text-gold-gradient {
+    background-image: linear-gradient(160deg, #f4e3b8 8%, #c9a45e 45%, #967339 90%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* 章節小標:拉字距的鎏金 caps */
+  .kicker {
+    @apply text-xs font-medium uppercase tracking-[0.42em] text-gold;
+  }
+
+  /* 左右淡出的鎏金分隔線 */
+  .gold-rule {
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      transparent,
+      rgba(201, 164, 94, 0.55),
+      transparent
+    );
   }
 }

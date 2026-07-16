@@ -426,7 +426,7 @@ export function ChatInterface({
   if (loginError) {
     return (
       <Card className="p-6 text-center">
-        <AlertCircle className="mx-auto h-8 w-8 text-red-700" aria-hidden />
+        <AlertCircle className="mx-auto h-8 w-8 text-red-400" aria-hidden />
         <p className="mt-3 text-sm text-ink">登入失敗:{loginError.message}</p>
         <Button className="mt-4" onClick={() => void login()}>
           重試

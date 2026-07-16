@@ -8,12 +8,18 @@
  * presign 失敗 (帳號太舊 / endpoint 變動) 會自動 fallback 到 relay。
  * Frontend 預設用 relay (POST /api/uploads/relay),簡單可靠。
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
+import path from "node:path";
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import axios, { AxiosError } from "axios";
 import FormData from "form-data";
 import { env } from "../lib/env.js";
+import { getStorageMode } from "../lib/runtime-config.js";
 
 const PresignBody = z.object({
   filename: z.string().min(1).max(256),
@@ -28,6 +34,47 @@ interface PinataPinResponse {
   IpfsHash: string;
   PinSize: number;
   Timestamp: string;
+}
+
+interface LocalFileMeta {
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
+/**
+ * Storage mode = "local" 的落地實作:串流寫入 LOCAL_UPLOAD_DIR,邊寫邊算
+ * sha256,以雜湊為檔名(天然去重),旁邊放 <hash>.json 記 content-type。
+ * 回傳的 URI 是 backend 自己的 HTTP 路由 — 瀏覽器(localhost:4000)與
+ * backend 容器內(自己)都解析得到;鏈上 tokenURI 存這個字串也完全合法。
+ */
+async function saveLocalFile(
+  stream: NodeJS.ReadableStream,
+  meta: { filename: string; contentType: string },
+): Promise<{ hash: string; size: number }> {
+  await mkdir(env.LOCAL_UPLOAD_DIR, { recursive: true });
+  const tmpPath = path.join(env.LOCAL_UPLOAD_DIR, `.tmp-${randomUUID()}`);
+  const hasher = createHash("sha256");
+  let size = 0;
+  const tap = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      hasher.update(chunk);
+      size += chunk.length;
+      cb(null, chunk);
+    },
+  });
+  try {
+    await pipeline(stream, tap, createWriteStream(tmpPath));
+  } catch (err) {
+    await rm(tmpPath, { force: true });
+    throw err;
+  }
+  const hash = hasher.digest("hex");
+  const finalPath = path.join(env.LOCAL_UPLOAD_DIR, hash);
+  await rename(tmpPath, finalPath);
+  const sidecar: LocalFileMeta = { filename: meta.filename, contentType: meta.contentType, size };
+  await writeFile(`${finalPath}.json`, JSON.stringify(sidecar));
+  return { hash, size };
 }
 
 export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
@@ -45,6 +92,16 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const parsed = PresignBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_body", issues: parsed.error.issues });
+    }
+
+    // 本地模式沒有「瀏覽器直傳」可言,一律導去 relay
+    if ((await getStorageMode()) === "local") {
+      return reply.send({
+        mode: "relay",
+        uploadId: randomUUID(),
+        relayUrl: "/api/uploads/relay",
+        reason: "storage_mode_local",
+      });
     }
 
     if (!env.PINATA_JWT) {
@@ -107,7 +164,8 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
    * Requires @fastify/multipart to be registered on the parent instance.
    */
   app.post("/relay", async (request, reply) => {
-    if (!env.PINATA_JWT) {
+    const storageMode = await getStorageMode();
+    if (storageMode === "pinata" && !env.PINATA_JWT) {
       return reply.code(503).send({ error: "pinata_not_configured" });
     }
 
@@ -122,6 +180,23 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
 
     const filename = filePart.filename;
     const contentType = filePart.mimetype || "application/octet-stream";
+
+    if (storageMode === "local") {
+      try {
+        const { hash, size } = await saveLocalFile(filePart.file, { filename, contentType });
+        return reply.send({
+          cid: hash,
+          uri: `${env.PUBLIC_BACKEND_ORIGIN}/api/uploads/local/${hash}`,
+          name: filename,
+          contentType,
+          size,
+          storage: "local",
+        });
+      } catch (err) {
+        request.log.error({ err }, "local upload failed");
+        return reply.code(500).send({ error: "local_upload_failed" });
+      }
+    }
 
     const form = new FormData();
     form.append("file", filePart.file, {
@@ -158,5 +233,31 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
         .code(502)
         .send({ error: "pinata_upload_failed", upstreamStatus: status ?? null });
     }
+  });
+
+  /**
+   * GET /api/uploads/local/:hash
+   * 讀回本地模式存的檔案。無論目前 storage mode 為何都可讀 —
+   * 切回 pinata 模式後,先前用本地 URI 鑄的塔位 metadata 仍要能解析。
+   */
+  app.get("/local/:hash", async (request, reply) => {
+    const { hash } = request.params as { hash: string };
+    if (!/^[0-9a-f]{64}$/.test(hash)) {
+      return reply.code(400).send({ error: "invalid_hash" });
+    }
+    const filePath = path.join(env.LOCAL_UPLOAD_DIR, hash);
+    try {
+      await stat(filePath);
+    } catch {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    let meta: LocalFileMeta | null = null;
+    try {
+      meta = JSON.parse(await readFile(`${filePath}.json`, "utf8")) as LocalFileMeta;
+    } catch {
+      // sidecar 遺失就用泛型 content-type,不擋下載
+    }
+    reply.header("cache-control", "public, max-age=31536000, immutable");
+    return reply.type(meta?.contentType ?? "application/octet-stream").send(createReadStream(filePath));
   });
 };

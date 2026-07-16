@@ -17,6 +17,7 @@ import { z } from "zod";
 import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
+import { broadcastTribute } from "../lib/ceremony-hub.js";
 
 const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u, "tokenId must be base-10"),
@@ -104,7 +105,10 @@ export const tributeRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         kind: body.data.kind ?? "note",
       },
     });
-    return reply.code(201).send(serialize(created));
+    const payload = serialize(created);
+    // 線上公祭:同房間(同塔位頁面)的訪客即時看到這份供品
+    broadcastTribute(params.data.tokenId, payload);
+    return reply.code(201).send(payload);
   });
 
   // DELETE /api/tributes/:tokenId/:tributeId — 屋主刪除不當留言

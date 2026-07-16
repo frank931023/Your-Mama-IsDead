@@ -65,14 +65,14 @@ export function ErrorDialogProvider({ children }: { children: React.ReactNode })
       {children}
       {current ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/60 px-4 py-8"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 py-8"
           role="dialog"
           aria-modal="true"
           aria-labelledby="error-dialog-title"
           onClick={dismiss}
         >
           <div
-            className="relative w-full max-w-lg rounded-lg border border-red-200 bg-paper shadow-2xl"
+            className="relative w-full max-w-lg rounded-lg border border-red-500/30 bg-paper shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -85,8 +85,8 @@ export function ErrorDialogProvider({ children }: { children: React.ReactNode })
             </button>
 
             <div className="flex items-start gap-3 border-b border-ink/10 p-5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
-                <AlertTriangle className="h-5 w-5 text-red-700" aria-hidden />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/15">
+                <AlertTriangle className="h-5 w-5 text-red-400" aria-hidden />
               </div>
               <div className="flex-1 pt-1">
                 <h2 id="error-dialog-title" className="font-serif text-lg text-ink">

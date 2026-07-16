@@ -702,7 +702,7 @@ function AvatarFaceGenerator({
           </div>
 
           {generated ? (
-            <div className="flex items-center gap-2 text-sm text-emerald-700">
+            <div className="flex items-center gap-2 text-sm text-emerald-300">
               <Check className="h-4 w-4" aria-hidden />
               <span>已生成專屬分身。</span>
               <button
@@ -734,7 +734,7 @@ function AvatarFaceGenerator({
                 <p className="text-xs text-ink-muted">請先上傳一張大頭照。</p>
               ) : null}
               {state.status === "error" ? (
-                <p className="text-xs text-red-700">{state.message}</p>
+                <p className="text-xs text-red-400">{state.message}</p>
               ) : null}
             </div>
           )}
@@ -937,7 +937,7 @@ function SubmitStep({
         ) : null}
 
         {state.status === "success" ? (
-          <div className="flex flex-col gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <div className="flex flex-col gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
             <p>鑄造交易已送出。</p>
             <p>
               交易雜湊:<code>{state.txHash}</code>

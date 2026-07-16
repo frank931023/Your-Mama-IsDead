@@ -60,9 +60,8 @@ describe("chain helpers (viem mock transport)", () => {
     expect(encoded.length).toBeGreaterThan(2);
   });
 
-  it("imports the public client without throwing", async () => {
+  it("imports the chain read helpers without throwing", async () => {
     const mod = await import("../src/chain.js");
-    expect(mod.publicClient).toBeDefined();
     expect(typeof mod.getOwnerOf).toBe("function");
     expect(typeof mod.getTokenURI).toBe("function");
     expect(typeof mod.getArtifactURI).toBe("function");

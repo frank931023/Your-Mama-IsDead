@@ -15,7 +15,7 @@ import { AlertTriangle } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { useIsCorrectChain } from "@/lib/wallet";
-import { ACTIVE_CHAIN_ID, SUPPORTED_CHAINS } from "@/lib/wagmi";
+import { SUPPORTED_CHAINS } from "@/lib/wagmi";
 import { cn } from "@/lib/utils";
 
 interface WalletConnectProps {
@@ -30,7 +30,7 @@ export function WalletConnect({ className, compact }: WalletConnectProps): React
     SUPPORTED_CHAINS.find((c) => c.id === expected)?.name ?? `chain ${expected}`;
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div className={cn("flex flex-col gap-2", compact && "relative", className)}>
       <ConnectButton
         showBalance={!compact}
         accountStatus={compact ? "address" : "full"}
@@ -39,7 +39,13 @@ export function WalletConnect({ className, compact }: WalletConnectProps): React
       {!isCorrect && current !== undefined ? (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          className={cn(
+            "flex items-center justify-between gap-3 rounded-md border border-amber-500/40 px-3 py-2 text-sm text-amber-200",
+            // compact(sticky 導覽列內)時改成絕對定位往下彈,避免撐爆 h-16 的列
+            compact
+              ? "absolute right-0 top-full z-50 mt-2 w-max max-w-[92vw] bg-paper shadow-ritual"
+              : "bg-amber-400/10",
+          )}
         >
           <span className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" aria-hidden />
@@ -49,7 +55,7 @@ export function WalletConnect({ className, compact }: WalletConnectProps): React
             size="sm"
             variant="secondary"
             loading={isPending}
-            onClick={() => switchChain({ chainId: ACTIVE_CHAIN_ID })}
+            onClick={() => switchChain({ chainId: expected })}
           >
             切換網路
           </Button>

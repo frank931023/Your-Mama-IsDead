@@ -443,7 +443,7 @@ export function TabletSupplementUploader({
               {voiceState.status === "working" ? voiceState.message : "生成克隆聲音"}
             </Button>
             {voiceLabel ? (
-              <div className="flex items-center gap-2 text-sm text-emerald-700">
+              <div className="flex items-center gap-2 text-sm text-emerald-300">
                 <Check className="h-4 w-4" aria-hidden />
                 <span>
                   已備妥克隆聲音 (<code className="text-xs">{voiceLabel}</code>),保存上鏈後生效。
@@ -451,7 +451,7 @@ export function TabletSupplementUploader({
               </div>
             ) : null}
             {voiceState.status === "error" ? (
-              <p className="text-xs text-red-700">{voiceState.message}</p>
+              <p className="text-xs text-red-400">{voiceState.message}</p>
             ) : null}
           </div>
         </CardContent>
@@ -484,7 +484,7 @@ export function TabletSupplementUploader({
             <p className="text-sm text-ink">同步鏈上資料……</p>
           ) : null}
           {save.status === "success" ? (
-            <div className="flex flex-col gap-1 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+            <div className="flex flex-col gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
               <p>補傳已上鏈完成。</p>
               <p>
                 交易雜湊:<code className="break-all">{save.txHash}</code>

@@ -56,11 +56,11 @@ export function WebGLGuard({ children, fallback }: WebGLGuardProps): React.React
       <>
         {fallback ?? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0d0a08] p-8 text-center">
-            <p className="text-base font-medium text-paper">無法載入 3D 靈堂場景</p>
-            <p className="max-w-md text-sm text-paper/70">
+            <p className="text-base font-medium text-ink">無法載入 3D 靈堂場景</p>
+            <p className="max-w-md text-sm text-ink/70">
               你的瀏覽器目前無法建立 WebGL(3D 繪圖)畫面。多半是「硬體加速」被關閉了。
             </p>
-            <p className="max-w-md text-xs text-paper/50">
+            <p className="max-w-md text-xs text-ink/50">
               Chrome:設定 → 系統 → 開啟「使用硬體加速」→ 重新啟動瀏覽器。
               或在網址列開 <span className="font-mono">chrome://gpu</span> 檢查 WebGL 狀態。
             </p>

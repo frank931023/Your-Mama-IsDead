@@ -17,7 +17,8 @@ import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { useIsCorrectChain } from "@/lib/wallet";
-import { ACTIVE_CHAIN_ID, SUPPORTED_CHAINS } from "@/lib/wagmi";
+import { SUPPORTED_CHAINS } from "@/lib/wagmi";
+import { useActiveChainId } from "@/lib/app-config";
 
 interface ChainGuardProps {
   children: ReactNode;
@@ -26,7 +27,7 @@ interface ChainGuardProps {
 
 export function ChainGuard({ children, fallback }: ChainGuardProps): React.ReactElement {
   const { isConnected } = useAccount();
-  const { isCorrect } = useIsCorrectChain();
+  const { isCorrect, expected } = useIsCorrectChain();
   const { switchChain, isPending } = useSwitchChain();
 
   if (!isConnected) {
@@ -46,18 +47,18 @@ export function ChainGuard({ children, fallback }: ChainGuardProps): React.React
 
   if (!isCorrect) {
     const expectedName =
-      SUPPORTED_CHAINS.find((c) => c.id === ACTIVE_CHAIN_ID)?.name ?? "Sepolia";
+      SUPPORTED_CHAINS.find((c) => c.id === expected)?.name ?? "Sepolia";
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-          <AlertCircle className="h-8 w-8 text-amber-700" aria-hidden />
+          <AlertCircle className="h-8 w-8 text-amber-300" aria-hidden />
           <p className="text-sm text-ink">
             請切換至 <strong>{expectedName}</strong> 後才能執行此操作。
           </p>
           <Button
             variant="secondary"
             loading={isPending}
-            onClick={() => switchChain({ chainId: ACTIVE_CHAIN_ID })}
+            onClick={() => switchChain({ chainId: expected })}
           >
             切換網路
           </Button>

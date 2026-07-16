@@ -39,8 +39,8 @@
 
 | 工具 | 用途 | 怎麼裝 |
 |---|---|---|
-| **Node.js 20+** | backend / frontend | https://nodejs.org/ |
-| **Docker Desktop** | postgres（含 pgvector）/ redis / minio | https://www.docker.com/products/docker-desktop/ |
+| **Docker Desktop** | postgres（含 pgvector）/ redis / minio / backend / frontend | https://www.docker.com/products/docker-desktop/ |
+| Node.js 20+ *(選擇性)* | 只有想在本機直跑 backend / frontend（不走 Docker）時才需要 | https://nodejs.org/ |
 | **Foundry** (`forge`、`cast`) | 編譯 / 部署合約 | `curl -L https://foundry.paradigm.xyz \| bash` 後 `foundryup` |
 | **Pinata 帳號** | IPFS 存逝者素材（必要） | https://app.pinata.cloud/ → API Keys → 取 JWT |
 | **MetaMask / Rabby** | 連接錢包簽名 mint NFT | 瀏覽器外掛 |
@@ -122,48 +122,40 @@ NEXT_PUBLIC_CONTRACT_ADDRESS=0xAbCd1234...
 
 ## Daily Startup（每次開發）
 
-**一鍵啟動：**
+**一鍵啟動（全部跑在 Docker）：**
 
 ```powershell
-.\start.ps1
+docker compose up -d
 ```
 
-[start.ps1](start.ps1) 會自動完成：
+一條指令起五個服務：postgres / redis / minio / **backend** (`http://localhost:4000`) / **frontend** (`http://localhost:3000`)。backend 容器啟動時會自動 `npm install + prisma generate + prisma migrate deploy`，frontend 容器會自動 `npm install`，**首次啟動要幾分鐘**（含下載依賴與 RAG embedding 模型）。
 
-1. 載入 `.env`
-2. `docker compose up -d`（postgres / redis / minio）
-3. 等 postgres 健康
-4. 兩個專案沒裝過就 `npm install`
-5. `prisma generate + migrate`
-6. **彈一個 PowerShell 視窗跑 backend** (`http://localhost:4000`)
-7. **彈另一個 PowerShell 視窗跑 frontend** (`http://localhost:3000`)
+```powershell
+docker compose logs -f backend frontend   # 看啟動進度 / dev server log
+```
+
+Windows 上也可以用 `.\start.ps1`（等同上面，外加 `.env` 存在性檢查）。
 
 打開瀏覽器 → http://localhost:3000，開始用。
 
-**選用旗標：**
+原始碼是 bind mount 進容器的，改 code 照樣熱更新；改了 `package.json` 或 `.env` 則 `docker compose up -d` 讓容器重建即可（npm install 在每次容器啟動時都會跑，有 volume 快取所以很快）。
 
-```powershell
-.\start.ps1 -InfraOnly    # 只起 docker，不跑 app
-.\start.ps1 -SkipInstall  # 跳過 npm install
-.\start.ps1 -SkipMigrate  # 跳過 prisma migrate
-```
+**關閉：** `docker compose down`。
 
-**關閉：** 兩個 dev 視窗各自 `Ctrl+C`，再 `docker compose down` 收 db。
-
-> ℹ️ backend 用 `dotenv/config` 讀**根目錄** `.env`。手動啟動時 cwd 要在根目錄（或設 `DOTENV_CONFIG_PATH`），否則會報 `Invalid environment configuration`。
+> ℹ️ 容器內的 `DATABASE_URL` / `REDIS_URL` 由 compose 覆寫成 service name（`postgres` / `redis`），`.env` 裡維持 `localhost` 不用改——那是給本機直跑用的。
 
 ---
 
-## Manual Startup（一個一個跑）
+## Manual Startup（本機直跑 backend/frontend）
 
-如果不想用 `start.ps1`：
+如果不想讓 app 跑在容器裡（例如要掛 debugger）：
 
 ```powershell
 # 0. 載入 env（每個新 terminal 都要做一次）
 . .\load-env.ps1
 
-# 1. 起基礎設施
-docker compose up -d
+# 1. 只起基礎設施（不要用無參數的 up -d，那會連 app 容器一起起、佔掉 3000/4000）
+docker compose up -d postgres redis minio   # 或 .\start.ps1 -InfraOnly
 
 # 2. Backend
 cd backend
@@ -197,6 +189,16 @@ npm run dev                 # 跑在 :3000
 
 ---
 
+## 本地測試模式（免 Pinata、免 faucet）
+
+不申請任何外部服務也能跑通完整 mint 流程。三個零件：
+
+1. **Anvil 本地鏈**：compose 內建 `anvil` 服務（`:8545`，狀態存 volume）。首次要部署一次合約：`./scripts/deploy-local.sh`（冪等，部署到決定性地址，與 `.env` 的 `LOCAL_CONTRACT_ADDRESS` 預設一致）。
+2. **Admin 控制台**：http://localhost:3000/admin ，密碼 = `.env` 的 `ADMIN_PASSWORD`。可即時切換 **儲存模式**（Pinata ⟷ 本地磁碟）與 **鏈模式**（Sepolia ⟷ 本地 Anvil），全站自動跟上，不用重啟。本地鏈模式下還能對任意地址「餵 gas」（`anvil_setBalance`，免 faucet）。
+3. **Burner 測試錢包**：導覽列燭焰 logo 連點 5 下＝連接/斷開瀏覽器內建的拋棄式錢包（免裝 MetaMask，真簽名，SIWE 可用）。在 admin 頁給它餵一次 ETH 即可 mint。
+
+> 本地模式鑄的塔位其 metadata URI 指向 `localhost:4000`，只在你機器上可解析——是拋棄式測試資料。要對外展示請切回 Pinata + Sepolia（需 `PINATA_JWT` 與一次真部署）。`docker compose down -v` 會把 anvil 鏈狀態、本地上傳、DB 一起歸零。
+
 ## Common Pitfalls
 
 開發過程踩過的雷，請對照排除：
@@ -224,7 +226,8 @@ npm run dev                 # 跑在 :3000
 需要全部重來：
 
 ```powershell
-# 清掉 docker volumes（postgres / redis / minio 全部歸零，含 RAG 向量索引）
+# 清掉 docker volumes（postgres / redis / minio 全部歸零，含 RAG 向量索引；
+# 也會清掉 backend/frontend 的 node_modules volume，下次啟動會重新 npm install）
 docker compose down -v
 
 # 清掉 mint 草稿（瀏覽器 DevTools Console）

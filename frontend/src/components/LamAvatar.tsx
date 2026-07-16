@@ -310,7 +310,7 @@ export const LamAvatar = React.forwardRef<LamAvatarHandle, LamAvatarProps>(
 
           {status === "error" ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-paper-soft/80 p-3 text-center">
-              <div className="flex max-w-full items-start gap-2 rounded-md bg-paper px-3 py-2 text-xs text-red-700 shadow-sm">
+              <div className="flex max-w-full items-start gap-2 rounded-md bg-paper px-3 py-2 text-xs text-red-400 shadow-sm">
                 <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
                 <span className="break-words">{errorMessage ?? "分身連線失敗"}</span>
               </div>

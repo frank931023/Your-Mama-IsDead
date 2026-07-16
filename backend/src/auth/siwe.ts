@@ -116,14 +116,17 @@ export async function verifyAndCreateSession(
 
 /** Shape of the JWT payload we issue. */
 export interface DsasJwtPayload {
-  address: string;
+  address?: string;
+  /** "admin" = /api/admin/login 簽發的管理員 token(無 address) */
+  role?: string;
   iat: number;
   exp: number;
 }
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { address: string };
+    // SIWE 會話 token 帶 address;admin token 帶 role — 擇一存在
+    payload: { address?: string; role?: string };
     user: DsasJwtPayload;
   }
 }

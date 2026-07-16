@@ -118,7 +118,7 @@ function MemorialCard({
             尚無肖像
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-ink/60 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
         <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2 text-paper">
           <div>
             <p className="font-serif text-lg leading-tight">{displayName(meta, tablet.tokenId)}</p>

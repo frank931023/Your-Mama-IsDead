@@ -321,7 +321,7 @@ function ReplaceImageTool(): React.ReactElement {
                         title="複製"
                       >
                         {copied ? (
-                          <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+                          <Check className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
                         ) : (
                           <Copy className="h-3.5 w-3.5" aria-hidden />
                         )}
@@ -332,7 +332,7 @@ function ReplaceImageTool(): React.ReactElement {
                   )}
                 </div>
                 {!isOwner ? (
-                  <div className="mt-1 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900">
+                  <div className="mt-1 flex items-start gap-2 rounded-md border border-amber-400/30 bg-amber-400/10 p-2.5 text-xs text-amber-200">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                     <span>
                       你目前連線的錢包不是這座燈塔的持有者。只有持有者能簽 setTokenURI
@@ -389,7 +389,7 @@ function ReplaceImageTool(): React.ReactElement {
               ) : null}
 
               {save.status === "success" ? (
-                <div className="flex flex-col gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <div className="flex flex-col gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
                   <p className="font-medium">✅ 換圖已上鏈完成。總覽頁重新整理後會顯示新圖。</p>
                   <p>
                     交易雜湊:<code className="break-all">{save.txHash}</code>
@@ -398,7 +398,7 @@ function ReplaceImageTool(): React.ReactElement {
                     新 metadata:<code className="break-all">{save.metadataUri}</code>
                   </p>
                   {save.oldCid ? (
-                    <div className="mt-1 rounded-md border border-emerald-300/60 bg-paper/60 p-2.5 text-ink">
+                    <div className="mt-1 rounded-md border border-emerald-400/30 bg-paper/60 p-2.5 text-ink">
                       <p className="mb-1 font-medium">下一步:撤回舊圖(可選)</p>
                       <p className="text-xs text-ink-muted">
                         舊圖仍在 IPFS。在 storage/ 目錄下跑以下指令把它從你的 Pinata 帳號 unpin:

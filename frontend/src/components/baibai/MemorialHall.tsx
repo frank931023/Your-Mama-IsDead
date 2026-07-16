@@ -20,17 +20,19 @@
 import * as React from "react";
 import { useAccount } from "wagmi";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Text, Html } from "@react-three/drei";
+import { Billboard, OrbitControls, Text, Html } from "@react-three/drei";
 import { WebGLGuard } from "./WebGLGuard";
 import * as THREE from "three";
-import { ChevronLeft, Hand, Flame, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
+import { ChevronLeft, Hand, Flame, Footprints, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { PersonaActivationModal } from "@/components/PersonaActivationModal";
 import { useError } from "@/components/ErrorDialog";
 import { ipfsToHttps, shortName, displayName, formatDate, truncateAddress } from "@/lib/utils";
 import { createTribute, listTributes, type TabletRecord, type Tribute } from "@/lib/api";
+import { useCeremony, type PeerState } from "@/lib/ceremony";
 import { playBell } from "./bell-sound";
+import { offeringOf } from "./TributeBoard";
 import { generateKeepsake, downloadBlob } from "./keepsake";
 
 interface MemorialHallProps {
@@ -42,6 +44,44 @@ interface MemorialHallProps {
 
 export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialHallProps): React.ReactElement {
   const { showError } = useError();
+  const { address } = useAccount();
+  // ── 線上公祭:presence + 儀式/供品即時廣播 + 化身走動 ─────────────
+  const [walkMode, setWalkMode] = React.useState(false);
+  const [hotspotHint, setHotspotHint] = React.useState<string | null>(null);
+  // HUD 顯示控制:H 鍵收合底部操作列;儀式提示可按 ✕ 關掉
+  const [hudHidden, setHudHidden] = React.useState(false);
+  const [ritualHintDismissed, setRitualHintDismissed] = React.useState(false);
+  // 聊天氣泡:T 鍵開輸入框;訊息顯示在化身頭上數秒
+  const [chatOpen, setChatOpen] = React.useState(false);
+  const [ownBubble, setOwnBubble] = React.useState<{ text: string; until: number } | null>(null);
+  const [peerBubbles, setPeerBubbles] = React.useState<Map<string, { text: string; until: number }>>(
+    () => new Map(),
+  );
+  const walkerName = address ? truncateAddress(address) : "訪客";
+  const [liveNotice, setLiveNotice] = React.useState<string | null>(null);
+  const liveNoticeTimer = React.useRef<number | undefined>(undefined);
+  const showLiveNotice = React.useCallback((text: string) => {
+    setLiveNotice(text);
+    window.clearTimeout(liveNoticeTimer.current);
+    liveNoticeTimer.current = window.setTimeout(() => setLiveNotice(null), 5_000);
+  }, []);
+  const { onlineCount, sendRitual, sendPos, sendPosLeave, sendChat, peersRef, peersVersion } = useCeremony(tablet.tokenId, {
+    onChat: (peerId, text) => {
+      setPeerBubbles((prev) => {
+        const next = new Map(prev);
+        next.set(peerId, { text, until: Date.now() + 6_500 });
+        return next;
+      });
+    },
+    onTribute: (t) => {
+      setRecentTributes((prev) =>
+        prev.some((x) => x.id === t.id) ? prev : [t, ...prev].slice(0, 5),
+      );
+      showLiveNotice(`${t.fromName || "有親友"} ${offeringOf(t.kind).verb}`);
+    },
+    onRitual: (ritual, name) =>
+      showLiveNotice(`${name || "有親友"}${ritual === "bow" ? "獻上了三鞠躬" : "點燃了一炷香"}`),
+  });
   const meta = tablet.metadata;
   const portraitUrl = meta?.image ? ipfsToHttps(meta.image) : null;
   const photoUrls = (meta?.dsas?.assets?.photos ?? []).map(ipfsToHttps).slice(0, 8);
@@ -82,6 +122,42 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
     playBell(220, 5, 0.18);
     return () => window.clearTimeout(t);
   }, []);
+
+  // 聊天氣泡過期清掃(每秒;只在有泡泡時 setState)
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setOwnBubble((b) => (b && b.until <= now ? null : b));
+      setPeerBubbles((prev) => {
+        let changed = false;
+        for (const v of prev.values()) if (v.until <= now) changed = true;
+        if (!changed) return prev;
+        const next = new Map<string, { text: string; until: number }>();
+        for (const [k, v] of prev) if (v.until > now) next.set(k, v);
+        return next;
+      });
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // 快捷鍵:T 開聊天(走動模式)、H 收合底部操作列。打字中不攔截。
+  React.useEffect(() => {
+    const isTyping = (t: EventTarget | null): boolean =>
+      t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement ||
+      (t instanceof HTMLElement && t.isContentEditable);
+    const onKey = (e: KeyboardEvent): void => {
+      if (isTyping(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (k === "t" && walkMode && !chatOpen) {
+        e.preventDefault(); // 避免 "t" 落進即將 focus 的輸入框
+        setChatOpen(true);
+      } else if (k === "h") {
+        setHudHidden((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [walkMode, chatOpen]);
 
   // 計算當下儀式階段,用於顯示引導提示
   const ritualHint = !incenseLit
@@ -124,6 +200,8 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
   const triggerBow = React.useCallback(() => {
     if (bowing) return;
     setBowing(true);
+    // 線上公祭:讓同在靈堂的親友看到有人行禮
+    sendRitual("bow");
     const cam = cameraRef.current;
     if (!cam) {
       setBowing(false);
@@ -162,7 +240,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
-  }, [bowing]);
+  }, [bowing, sendRitual]);
 
   return (
     <div className="fixed inset-0 z-40 bg-black">
@@ -177,7 +255,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           <ChevronLeft className="h-4 w-4" aria-hidden />
           離開紀念空間
         </Button>
-        <div className="pointer-events-none rounded-md bg-black/40 px-4 py-2 text-center text-paper backdrop-blur-sm">
+        <div className="pointer-events-none rounded-md bg-black/40 px-4 py-2 text-center text-ink backdrop-blur-sm">
           <p className="font-serif text-xl">{displayName(meta, tablet.tokenId)}</p>
           {meta?.dsas.deceased.birth?.date || meta?.dsas.deceased.death?.date ? (
             <p className="text-xs opacity-80">
@@ -185,14 +263,115 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
               {formatDate(meta?.dsas.deceased.death?.date) || "?"}
             </p>
           ) : null}
+          {onlineCount > 1 ? (
+            <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-emerald-300">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
+              {onlineCount} 位親友同在靈堂
+            </p>
+          ) : null}
         </div>
         <div className="w-24" /> {/* 占位讓中間真的居中 */}
       </div>
 
-      {/* 底部 overlay:互動按鈕 */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex flex-wrap justify-center gap-3">
+      {/* 走動模式操作提示 */}
+      {walkMode && !hudHidden ? (
+        <div className="pointer-events-none absolute left-1/2 top-20 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-1.5 text-xs text-ink/90 backdrop-blur-sm">
+          WASD 移動 · 空白鍵跳躍 · T 說話 · E 互動 · H 收合按鈕 · 拖曳環顧
+        </div>
+      ) : null}
+
+      {/* T 聊天輸入框 */}
+      {chatOpen ? (
+        <form
+          className="absolute bottom-28 left-1/2 z-20 flex w-full max-w-sm -translate-x-1/2 items-center gap-2 rounded-full border border-gold/30 bg-black/80 py-1.5 pl-4 pr-1.5 backdrop-blur-md"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const input = e.currentTarget.elements.namedItem("bubble") as HTMLInputElement;
+            const text = input.value.trim().slice(0, 120);
+            if (text) {
+              sendChat(text, walkerName);
+              setOwnBubble({ text, until: Date.now() + 6_500 });
+            }
+            input.value = "";
+            setChatOpen(false);
+          }}
+        >
+          <input
+            name="bubble"
+            autoFocus
+            maxLength={120}
+            placeholder="說點什麼…(Enter 送出、Esc 取消)"
+            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted/60 focus:outline-none"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setChatOpen(false);
+            }}
+            onBlur={() => setChatOpen(false)}
+          />
+          <button
+            type="submit"
+            className="rounded-full bg-gold px-3 py-1 text-xs font-medium text-paper"
+            onMouseDown={(e) => e.preventDefault() /* 避免先觸發 input blur 關閉 */}
+          >
+            送出
+          </button>
+        </form>
+      ) : null}
+
+      {/* HUD 收合中:右下角留一顆小膠囊供喚回 */}
+      {hudHidden ? (
+        <button
+          type="button"
+          onClick={() => setHudHidden(false)}
+          className="absolute bottom-4 right-4 z-10 rounded-full bg-black/60 px-3 py-1.5 text-xs text-ink/80 backdrop-blur-sm transition-colors hover:text-ink"
+        >
+          H 顯示操作列
+        </button>
+      ) : null}
+
+      {/* 互動熱點提示:走近供桌/蒲團時出現 */}
+      {walkMode && hotspotHint ? (
+        <div className="pointer-events-none absolute bottom-36 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/70 px-5 py-2 text-sm text-ink backdrop-blur-md animate-fade-up">
+          按
+          <kbd className="rounded border border-gold/50 bg-gold/15 px-2 py-0.5 font-mono text-xs text-gold-soft">E</kbd>
+          {hotspotHint}
+        </div>
+      ) : null}
+
+      {/* 線上公祭:別人行禮/獻供的即時通知 */}
+      {liveNotice ? (
+        <div
+          role="status"
+          className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-5 py-2 text-sm text-ink backdrop-blur-md animate-fade-up"
+        >
+          🕯 {liveNotice}
+        </div>
+      ) : null}
+
+      {/* 底部 overlay:互動按鈕(H 鍵收合) */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-6 z-10 flex flex-wrap justify-center gap-3 transition-all duration-300 ${
+          hudHidden ? "invisible translate-y-6 opacity-0" : ""
+        }`}
+      >
         <Button
-          onClick={() => setIncenseLit(true)}
+          onClick={() => {
+            setWalkMode((prev) => {
+              if (prev) sendPosLeave(); // 退出走動:收掉自己的身影
+              return !prev;
+            });
+          }}
+          variant="outline"
+          size="lg"
+          className="pointer-events-auto bg-paper/85 text-ink hover:bg-paper"
+        >
+          <Footprints className="h-4 w-4" aria-hidden />
+          {walkMode ? "回到靜觀" : "起身走動"}
+        </Button>
+        <Button
+          onClick={() => {
+            setIncenseLit(true);
+            sendRitual("incense");
+          }}
           disabled={incenseLit}
           variant="outline"
           size="lg"
@@ -206,7 +385,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           disabled={bowing}
           variant="secondary"
           size="lg"
-          className="pointer-events-auto bg-gold/90 text-ink hover:bg-gold"
+          className="pointer-events-auto bg-gold/90 text-paper hover:bg-gold"
         >
           <Hand className="h-4 w-4" aria-hidden />
           {bowing ? "鞠躬中…" : "獻上三鞠躬"}
@@ -258,7 +437,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
             <Button
               onClick={() => setChatModalOpen(true)}
               size="lg"
-              className="pointer-events-auto bg-gold text-ink shadow-lg shadow-gold/40 hover:bg-gold-dark hover:text-paper"
+              className="pointer-events-auto bg-gold text-paper shadow-lg shadow-gold/40 hover:bg-gold-dark"
               style={{ animation: "ritual-hint-fade 1.6s ease-out" }}
             >
               <MessagesSquare className="h-4 w-4" aria-hidden />
@@ -286,16 +465,26 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         }}
       />
 
-      {/* 儀式引導提示:跟隨儀式階段顯示在畫面中央偏下;每次切換用 key 強制 remount,觸發 keyframe 淡入 */}
-      <div className="pointer-events-none absolute inset-x-0 top-[60%] z-10 flex justify-center">
-        <p
-          key={ritualHint}
-          className="rounded-full bg-black/40 px-4 py-1.5 text-sm tracking-wider text-paper/90 backdrop-blur-sm"
-          style={{ animation: "ritual-hint-fade 1.2s ease-out" }}
-        >
-          {ritualHint}
-        </p>
-      </div>
+      {/* 儀式引導提示:跟隨儀式階段顯示在畫面中央偏下;可按 ✕ 關掉 */}
+      {!ritualHintDismissed && !hudHidden ? (
+        <div className="pointer-events-none absolute inset-x-0 top-[60%] z-10 flex justify-center">
+          <p
+            key={ritualHint}
+            className="flex items-center gap-2 rounded-full bg-black/40 px-4 py-1.5 text-sm tracking-wider text-ink/90 backdrop-blur-sm"
+            style={{ animation: "ritual-hint-fade 1.2s ease-out" }}
+          >
+            {ritualHint}
+            <button
+              type="button"
+              aria-label="關閉提示"
+              onClick={() => setRitualHintDismissed(true)}
+              className="pointer-events-auto -mr-1 rounded-full px-1.5 text-ink/50 transition-colors hover:text-ink"
+            >
+              ✕
+            </button>
+          </p>
+        </div>
+      ) : null}
       <style jsx global>{`
         @keyframes ritual-hint-fade {
           from { opacity: 0; transform: translateY(8px); }
@@ -307,7 +496,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
       <FloatingTributes tributes={recentTributes} />
 
       {/* 提示:操作說明 */}
-      <p className="pointer-events-none absolute bottom-2 right-3 z-10 text-[10px] text-paper/60">
+      <p className="pointer-events-none absolute bottom-2 right-3 z-10 text-[10px] text-ink/60">
         滑鼠左鍵拖曳:環視 ・ 滾輪:縮放
       </p>
 
@@ -325,15 +514,17 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         shadows
         camera={{ position: [0, 1.7, 5.5], fov: 45 }}
         gl={{ antialias: true }}
-        onCreated={({ camera }) => {
+        onCreated={({ camera, gl }) => {
           cameraRef.current = camera as THREE.PerspectiveCamera;
+          gl.toneMappingExposure = 1.15;
         }}
       >
-        <color attach="background" args={["#0d0a08"]} />
-        <fog attach="fog" args={["#0d0a08", 6, 25]} />
+        <color attach="background" args={["#eae2d2"]} />
+        <fog attach="fog" args={["#eae2d2", 10, 40]} />
 
-        {/* 一盞微弱環境光,避免完全黑暗 */}
-        <ambientLight intensity={0.18} color="#ffe2c0" />
+        {/* 明亮告別式場基調:高環境光 + 半球光,燭火只作暖色點綴 */}
+        <ambientLight intensity={0.62} color="#fff3de" />
+        <hemisphereLight args={["#fff6e6", "#9c8f7c", 0.55]} />
 
         {/* 中央壇前主光源:暖橘色,有閃爍 */}
         <FlickerLight position={[0, 3, 1.5]} color="#ffaa55" intensity={2.2} />
@@ -358,6 +549,13 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         <Lantern position={[-3.2, 4.7, -1.2]} />
         <Lantern position={[3.2, 4.7, -1.2]} />
         <CarpetAndCushion />
+        {/* 弔唁座位區(後段)+ 座位區的立燭/燈籠照明 */}
+        <ChairRows />
+        <TallCandle position={[-3.8, 0, 5.4]} />
+        <TallCandle position={[3.8, 0, 5.4]} />
+        <Lantern position={[-3.2, 4.7, 7.2]} />
+        <Lantern position={[3.2, 4.7, 7.2]} />
+        <FlickerLight position={[0, 3.4, 5.6]} color="#ff9d4d" intensity={1.8} />
         <Altar incenseLit={incenseLit} />
         <Guide name={shortName(meta, tablet.tokenId)} />
         {showXiaojing ? <Xiaojing /> : null}
@@ -373,11 +571,30 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           ref={controlsRef as React.Ref<never>}
           target={[0, 1.5, 0]}
           enablePan={false}
-          minDistance={2.5}
+          minDistance={walkMode ? 1.8 : 2.5}
           maxDistance={9}
           maxPolarAngle={Math.PI / 2 - 0.05}
           minPolarAngle={Math.PI / 6}
         />
+
+        {/* 線上公祭化身:別人的身影(永遠顯示)+ 自己的走動身影 */}
+        <PeerAvatars peersRef={peersRef} peersVersion={peersVersion} bubbles={peerBubbles} />
+        {walkMode ? (
+          <SelfWalker
+            controlsRef={controlsRef}
+            name={walkerName}
+            bowing={bowing}
+            incenseLit={incenseLit}
+            bubble={ownBubble?.text ?? null}
+            sendPos={sendPos}
+            onIncense={() => {
+              setIncenseLit(true);
+              sendRitual("incense");
+            }}
+            onBow={triggerBow}
+            onHotspot={setHotspotHint}
+          />
+        ) : null}
       </Canvas>
       </WebGLGuard>
     </div>
@@ -386,35 +603,91 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
 
 // ─── 場景元件 ──────────────────────────────────────────────────────────
 
-/** 大廳:石板地、後方石牆、左右側牆 */
+/**
+ * 大廳:石板地、後方石牆、左右側牆。
+ * 空間往 +z(入口方向)延伸到 z=9,後段是弔唁座位區(ChairRows)。
+ */
 function Hall(): React.ReactElement {
   return (
     <group>
-      {/* 地板 */}
+      {/* 地板:淺暖石面(真實告別式場的亮地板) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[20, 20]} />
-        <meshStandardMaterial color="#1a1410" roughness={0.95} />
+        <planeGeometry args={[20, 26]} />
+        <meshStandardMaterial color="#b7a992" roughness={0.85} />
       </mesh>
-      {/* 後牆 */}
+      {/* 後牆(遺照那面) */}
       <mesh position={[0, 3, -3]} receiveShadow>
         <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#2a1f18" roughness={1} />
+        <meshStandardMaterial color="#e7ddcb" roughness={1} />
+      </mesh>
+      {/* 前牆(入口那面) */}
+      <mesh position={[0, 3, 9]} rotation={[0, Math.PI, 0]} receiveShadow>
+        <planeGeometry args={[10, 6]} />
+        <meshStandardMaterial color="#e3d9c6" roughness={1} />
       </mesh>
       {/* 左牆 */}
-      <mesh position={[-5, 3, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-        <planeGeometry args={[6, 6]} />
-        <meshStandardMaterial color="#221912" roughness={1} />
+      <mesh position={[-5, 3, 3]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+        <planeGeometry args={[12, 6]} />
+        <meshStandardMaterial color="#e5dbc8" roughness={1} />
       </mesh>
       {/* 右牆 */}
-      <mesh position={[5, 3, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
-        <planeGeometry args={[6, 6]} />
-        <meshStandardMaterial color="#221912" roughness={1} />
+      <mesh position={[5, 3, 3]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
+        <planeGeometry args={[12, 6]} />
+        <meshStandardMaterial color="#e5dbc8" roughness={1} />
       </mesh>
       {/* 天花板 */}
-      <mesh position={[0, 6, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#15100c" />
+      <mesh position={[0, 6, 3]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 12]} />
+        <meshStandardMaterial color="#f0e9da" />
       </mesh>
+    </group>
+  );
+}
+
+/**
+ * 弔唁座位區:四排木椅、中央留走道,微亂的角度讓場景不像複製貼上。
+ * 椅子是純 primitive(座面+椅背+兩側板),整區靜態、零動畫成本。
+ */
+function ChairRows(): React.ReactElement {
+  const rand = React.useMemo(() => mulberry32(20260716), []);
+  const chairs: Array<{ x: number; z: number; rot: number }> = React.useMemo(() => {
+    const list: Array<{ x: number; z: number; rot: number }> = [];
+    const rows = [3.7, 5.0, 6.3, 7.6];
+    const seats = [-3.1, -2.3, -1.5, 1.5, 2.3, 3.1]; // 中央走道 |x|<1.5 淨空
+    for (const z of rows) {
+      for (const x of seats) {
+        list.push({ x, z, rot: (rand() - 0.5) * 0.12 });
+      }
+    }
+    return list;
+  }, [rand]);
+
+  return (
+    // 椅背在 +z(入口側),坐面朝 -z 面向供桌遺照
+    <group>
+      {chairs.map(({ x, z, rot }, i) => (
+        <group key={i} position={[x, 0, z]} rotation={[0, rot, 0]}>
+          {/* 座面 */}
+          <mesh position={[0, 0.45, 0]} castShadow>
+            <boxGeometry args={[0.52, 0.06, 0.5]} />
+            <meshStandardMaterial color="#3a2a1c" roughness={0.9} />
+          </mesh>
+          {/* 椅背 */}
+          <mesh position={[0, 0.78, 0.23]} castShadow>
+            <boxGeometry args={[0.52, 0.62, 0.05]} />
+            <meshStandardMaterial color="#42301f" roughness={0.9} />
+          </mesh>
+          {/* 兩側板腳 */}
+          <mesh position={[-0.23, 0.22, 0]}>
+            <boxGeometry args={[0.05, 0.44, 0.46]} />
+            <meshStandardMaterial color="#33241a" roughness={0.95} />
+          </mesh>
+          <mesh position={[0.23, 0.22, 0]}>
+            <boxGeometry args={[0.05, 0.44, 0.46]} />
+            <meshStandardMaterial color="#33241a" roughness={0.95} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -777,6 +1050,8 @@ function Lantern({ position }: { position: [number, number, number] }): React.Re
         <cylinderGeometry args={[0.16, 0.12, 0.07, 12]} />
         <meshStandardMaterial color="#241e16" />
       </mesh>
+      {/* 燈籠要真的發光:不投影的暖光,照亮周邊空間 */}
+      <pointLight color="#ffe3b3" intensity={0.75} distance={6} decay={1.6} />
     </group>
   );
 }
@@ -1365,7 +1640,7 @@ function Guide({ name }: { name: string }): React.ReactElement | null {
       {/* 對白氣泡 */}
       {(phase === "visible" || phase === "appearing") && (
         <Html position={[0, 2.4, 0]} center distanceFactor={6} style={{ pointerEvents: "none" }}>
-          <div className="whitespace-nowrap rounded-lg border border-paper/30 bg-black/70 px-4 py-2 text-sm text-paper backdrop-blur-sm">
+          <div className="whitespace-nowrap rounded-lg border border-ink/30 bg-black/70 px-4 py-2 text-sm text-ink backdrop-blur-sm">
             請靜下心,{name} 一直在等您。
           </div>
         </Html>
@@ -1429,7 +1704,7 @@ function Xiaojing(): React.ReactElement | null {
       </mesh>
       {(phase === "visible" || phase === "appearing") && (
         <Html position={[0, 2.2, 0]} center distanceFactor={6} style={{ pointerEvents: "none" }}>
-          <div className="whitespace-nowrap rounded-lg border border-paper/30 bg-black/75 px-4 py-2 text-sm text-paper backdrop-blur-sm">
+          <div className="whitespace-nowrap rounded-lg border border-ink/30 bg-black/75 px-4 py-2 text-sm text-ink backdrop-blur-sm">
             <p className="text-[10px] uppercase tracking-wider" style={{ color: "#e8b89a" }}>家屬・小靜</p>
             <p>謝謝你趕過來,他一直等著你。</p>
           </div>
@@ -1465,14 +1740,14 @@ function FloatingTributes({ tributes }: { tributes: Tribute[] }): React.ReactEle
           return (
             <div
               key={t.id}
-              className={`absolute ${horizontal} max-w-[18%] rounded-md border border-paper/15 bg-black/30 px-3 py-2 text-paper/85 backdrop-blur-sm`}
+              className={`absolute ${horizontal} max-w-[18%] rounded-md border border-ink/15 bg-black/30 px-3 py-2 text-ink/85 backdrop-blur-sm`}
               style={{
                 top: `${top}%`,
                 animation: `tribute-float 16s ease-in-out ${delay}s infinite`,
               }}
             >
               <p className="line-clamp-3 font-serif text-xs leading-relaxed">「{t.message}」</p>
-              <p className="mt-1 text-[10px] text-paper/50">
+              <p className="mt-1 text-[10px] text-ink/50">
                 — {t.fromName || (t.fromAddress ? t.fromAddress.slice(0, 6) + "..." + t.fromAddress.slice(-4) : "匿名")}
               </p>
             </div>
@@ -1519,5 +1794,360 @@ function FlickerLight({
       decay={1.5}
       castShadow
     />
+  );
+}
+
+// ─── 線上公祭化身(多人同在) ────────────────────────────────────────────
+//
+// 每位進入「走動模式」的訪客是一盞漂浮的暖光身影。位置經 ceremony hub
+// 以 ~10Hz 同步;渲染端向最新網路值做內插,所以移動是滑順的。
+// 效能:位置更新走 peersRef 原地改(不觸發 React re-render),只有
+// 名冊變動(進場/離場)靠 peersVersion 重建元件列表。
+
+const WALK_BOUNDS = { minX: -4.3, maxX: 4.3, minZ: -0.4, maxZ: 8.4 };
+const WALK_SPEED = 2.4; // 單位/秒
+
+/** 角度取最短路徑的 lerp(避免從 179° 轉到 -179° 繞一大圈) */
+function angleLerp(current: number, target: number, t: number): number {
+  let delta = (target - current) % (Math.PI * 2);
+  if (delta > Math.PI) delta -= Math.PI * 2;
+  if (delta < -Math.PI) delta += Math.PI * 2;
+  return current + delta * t;
+}
+
+/** 三鞠躬的俯身曲線:progress 0→1 之間起伏三次 */
+function bowAngle(progress: number): number {
+  if (progress <= 0 || progress >= 1) return 0;
+  return 0.5 * (1 - Math.cos(progress * Math.PI * 6)) / 2;
+}
+
+/** 名牌:troika Text 預設字型沒有 CJK,改用 CanvasTexture 畫(與輓聯同法) */
+function NameTag({ name }: { name: string }): React.ReactElement {
+  const texture = React.useMemo(
+    () =>
+      makeCanvasTexture(
+        (ctx, w, h) => {
+          ctx.clearRect(0, 0, w, h);
+          ctx.font = `44px ${CJK_SERIF}`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = "rgba(0,0,0,0.85)";
+          ctx.strokeText(name, w / 2, h / 2);
+          ctx.fillStyle = "#f4e8cf";
+          ctx.fillText(name, w / 2, h / 2);
+        },
+        256,
+        80,
+      ),
+    [name],
+  );
+  return (
+    <Billboard position={[0, 1.5, 0]}>
+      <mesh>
+        <planeGeometry args={[0.9, 0.28]} />
+        <meshBasicMaterial map={texture} transparent depthWrite={false} />
+      </mesh>
+    </Billboard>
+  );
+}
+
+/** 頭頂白色聊天泡泡(T 鍵發話)。Html 是螢幕空間 DOM,天然面向鏡頭。 */
+function ChatBubble({ text }: { text: string }): React.ReactElement {
+  return (
+    <Html position={[0, 1.95, 0]} center distanceFactor={7} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+      {/* w-max:Html 錨點寬度為 0,不給內容定寬會塌成一字一行 */}
+      <div className="relative w-max max-w-[220px] whitespace-pre-wrap break-words rounded-2xl bg-white px-3.5 py-2 text-center text-[13px] leading-snug text-neutral-900 shadow-xl">
+        {text}
+        {/* 泡泡小尾巴 */}
+        <span
+          aria-hidden
+          className="absolute -bottom-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 bg-white"
+        />
+      </div>
+    </Html>
+  );
+}
+
+/** 化身外觀:袍狀錐體 + 頭 + 暖光,像一盞緩緩漂浮的紙燈籠 */
+function LanternFigure({ name, self = false }: { name: string; self?: boolean }): React.ReactElement {
+  return (
+    <group>
+      <mesh position={[0, 0.52, 0]} castShadow>
+        <coneGeometry args={[0.3, 0.9, 20]} />
+        <meshStandardMaterial
+          color="#efe0bd"
+          emissive="#c9a45e"
+          emissiveIntensity={self ? 0.45 : 0.3}
+          transparent
+          opacity={0.92}
+          roughness={0.6}
+        />
+      </mesh>
+      <mesh position={[0, 1.12, 0]} castShadow>
+        <sphereGeometry args={[0.13, 20, 20]} />
+        <meshStandardMaterial color="#f2e6c8" emissive="#d8b877" emissiveIntensity={0.35} roughness={0.5} />
+      </mesh>
+      {/* 只有自己的身影帶一盞小光,避免多人時光源爆量 */}
+      {self ? <pointLight position={[0, 1, 0]} intensity={0.55} distance={2.6} color="#ffd9a0" /> : null}
+      <NameTag name={name} />
+    </group>
+  );
+}
+
+interface SelfWalkerProps {
+  controlsRef: React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null>;
+  name: string;
+  bowing: boolean;
+  incenseLit: boolean;
+  /** 自己的聊天泡泡文字(T 鍵發話後顯示數秒) */
+  bubble: string | null;
+  sendPos: (x: number, y: number, z: number, ry: number, name?: string) => void;
+  /** 走到供桌前按 E:上香 */
+  onIncense: () => void;
+  /** 走到蒲團上按 E:三鞠躬 */
+  onBow: () => void;
+  /** 目前靠近的互動熱點提示(null = 不在任何熱點) */
+  onHotspot: (label: string | null) => void;
+}
+
+/** 場景互動熱點:走進半徑內會出現「按 E ○○」提示 */
+const HOTSPOTS = [
+  { id: "incense", x: 0, z: 1.15, radius: 1.25, label: "上香" },
+  { id: "bow", x: 0, z: 2.1, radius: 1.0, label: "獻上三鞠躬" },
+] as const;
+
+const JUMP_VELOCITY = 3.4;
+const GRAVITY = 9.8;
+
+/**
+ * 自己的化身:WASD/方向鍵移動、空白鍵跳躍、E 與場景互動、
+ * 第三人稱跟隨(OrbitControls 目標鎖住化身)。
+ */
+function SelfWalker({
+  controlsRef,
+  name,
+  bowing,
+  incenseLit,
+  bubble,
+  sendPos,
+  onIncense,
+  onBow,
+  onHotspot,
+}: SelfWalkerProps): React.ReactElement {
+  const groupRef = React.useRef<THREE.Group>(null);
+  const posRef = React.useRef(new THREE.Vector3((Math.random() - 0.5) * 3, 0, 2.3));
+  const ryRef = React.useRef(Math.PI); // 出生面向供桌
+  const keysRef = React.useRef<Set<string>>(new Set());
+  const bowStartRef = React.useRef<number | null>(null);
+  const bobPhase = React.useMemo(() => Math.random() * Math.PI * 2, []);
+  // 跳躍狀態(py = 離地高度)
+  const pyRef = React.useRef(0);
+  const vyRef = React.useRef(0);
+  // E 鍵當下能觸發的動作(useFrame 每幀依距離更新)
+  const interactRef = React.useRef<(() => void) | null>(null);
+  const hotspotLabelRef = React.useRef<string | null>(null);
+
+  // 鍵盤:window 監聽;打字中(留言輸入框)不攔截;方向鍵/空白鍵防捲動
+  React.useEffect(() => {
+    const isTyping = (t: EventTarget | null): boolean =>
+      t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement ||
+      (t instanceof HTMLElement && t.isContentEditable);
+    const down = (e: KeyboardEvent): void => {
+      if (isTyping(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
+        if (k.startsWith("arrow")) e.preventDefault();
+        keysRef.current.add(k);
+        return;
+      }
+      if (k === " ") {
+        e.preventDefault(); // 避免捲動頁面 / 誤觸 focus 中的按鈕
+        if (pyRef.current <= 0.001 && vyRef.current === 0) vyRef.current = JUMP_VELOCITY;
+        return;
+      }
+      if (k === "e") {
+        interactRef.current?.();
+      }
+    };
+    const up = (e: KeyboardEvent): void => {
+      keysRef.current.delete(e.key.toLowerCase());
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      keysRef.current.clear();
+      onHotspot(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 進入走動模式:鏡頭目標直接鎖到化身,並立刻廣播一次位置
+  React.useEffect(() => {
+    const ctrl = controlsRef.current;
+    const p = posRef.current;
+    if (ctrl) {
+      ctrl.target.set(p.x, 1.2, p.z);
+      ctrl.update();
+    }
+    sendPos(p.x, 0, p.z, ryRef.current, name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    bowStartRef.current = bowing ? performance.now() : null;
+  }, [bowing]);
+
+  useFrame((state, rawDt) => {
+    const dt = Math.min(rawDt, 0.1);
+    const g = groupRef.current;
+    const p = posRef.current;
+    if (!g) return;
+
+    const k = keysRef.current;
+    const fwdIn = (k.has("w") || k.has("arrowup") ? 1 : 0) - (k.has("s") || k.has("arrowdown") ? 1 : 0);
+    const rightIn = (k.has("d") || k.has("arrowright") ? 1 : 0) - (k.has("a") || k.has("arrowleft") ? 1 : 0);
+
+    let moved = false;
+    if (fwdIn !== 0 || rightIn !== 0) {
+      // 以鏡頭方位為準的移動方向(W = 朝畫面深處)
+      const fwd = new THREE.Vector3();
+      state.camera.getWorldDirection(fwd);
+      fwd.y = 0;
+      fwd.normalize();
+      const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
+      const dir = fwd.multiplyScalar(fwdIn).add(right.multiplyScalar(rightIn));
+      if (dir.lengthSq() > 0) {
+        dir.normalize();
+        p.x = Math.min(WALK_BOUNDS.maxX, Math.max(WALK_BOUNDS.minX, p.x + dir.x * WALK_SPEED * dt));
+        p.z = Math.min(WALK_BOUNDS.maxZ, Math.max(WALK_BOUNDS.minZ, p.z + dir.z * WALK_SPEED * dt));
+        ryRef.current = angleLerp(ryRef.current, Math.atan2(dir.x, dir.z), Math.min(1, dt * 10));
+        moved = true;
+      }
+    }
+
+    // 跳躍物理:簡單重力積分,落地歸零
+    const airborne = pyRef.current > 0 || vyRef.current !== 0;
+    if (airborne) {
+      vyRef.current -= GRAVITY * dt;
+      pyRef.current = Math.max(0, pyRef.current + vyRef.current * dt);
+      if (pyRef.current === 0 && vyRef.current < 0) vyRef.current = 0;
+    }
+
+    // 身影位置 + 漂浮 + 行禮
+    // YXZ:先轉向再俯仰,行禮才會朝自己面向的方向俯身(預設 XYZ 面向 -z 時會後仰)
+    if (g.rotation.order !== "YXZ") g.rotation.order = "YXZ";
+    const bob = Math.sin(state.clock.elapsedTime * 1.7 + bobPhase) * 0.04;
+    g.position.set(p.x, bob + pyRef.current, p.z);
+    g.rotation.y = ryRef.current;
+    if (bowStartRef.current !== null) {
+      const progress = (performance.now() - bowStartRef.current) / 3600; // 與鏡頭三鞠躬同長
+      g.rotation.x = bowAngle(progress);
+    } else {
+      g.rotation.x *= Math.max(0, 1 - dt * 8);
+    }
+
+    // 互動熱點:找最近且在半徑內的,更新「按 E ○○」提示與觸發動作
+    let nearest: { label: string; action: () => void } | null = null;
+    let nearestDist = Infinity;
+    for (const h of HOTSPOTS) {
+      if (h.id === "incense" && incenseLit) continue; // 已上過香就不再提示
+      const d = Math.hypot(p.x - h.x, p.z - h.z);
+      if (d <= h.radius && d < nearestDist) {
+        nearestDist = d;
+        nearest = { label: h.label, action: h.id === "incense" ? onIncense : onBow };
+      }
+    }
+    interactRef.current = nearest?.action ?? null;
+    if (hotspotLabelRef.current !== (nearest?.label ?? null)) {
+      hotspotLabelRef.current = nearest?.label ?? null;
+      onHotspot(hotspotLabelRef.current);
+    }
+
+    // 第三人稱跟隨:target 與 camera 一起平移,保持使用者拖出來的視角
+    if (moved) {
+      const ctrl = controlsRef.current;
+      if (ctrl) {
+        const dx = p.x - ctrl.target.x;
+        const dz = p.z - ctrl.target.z;
+        ctrl.target.x += dx;
+        ctrl.target.z += dz;
+        ctrl.target.y = 1.2;
+        state.camera.position.x += dx;
+        state.camera.position.z += dz;
+        ctrl.update();
+      }
+    }
+    if (moved || airborne) {
+      sendPos(p.x, pyRef.current, p.z, ryRef.current, name); // hook 內建 10Hz 節流
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <LanternFigure name={name} self />
+      {bubble ? <ChatBubble text={bubble} /> : null}
+    </group>
+  );
+}
+
+/** 單一其他訪客的身影:向網路目標值內插移動,收到 ritual 時行禮 */
+function PeerFigure({ peer, bubble }: { peer: PeerState; bubble: string | null }): React.ReactElement {
+  const groupRef = React.useRef<THREE.Group>(null);
+  const bobPhase = React.useMemo(
+    () => (peer.id.charCodeAt(0) * 131 % 628) / 100,
+    [peer.id],
+  );
+
+  useFrame((state, rawDt) => {
+    const dt = Math.min(rawDt, 0.1);
+    const g = groupRef.current;
+    if (!g) return;
+    if (g.rotation.order !== "YXZ") g.rotation.order = "YXZ"; // 行禮朝面向方向俯身
+    const t = Math.min(1, dt * 8);
+    peer.cx += (peer.x - peer.cx) * t;
+    peer.cy += (peer.y - peer.cy) * Math.min(1, dt * 12); // 跳躍垂直內插快一點才有彈性
+    peer.cz += (peer.z - peer.cz) * t;
+    peer.cry = angleLerp(peer.cry, peer.ry, t);
+    const bob = Math.sin(state.clock.elapsedTime * 1.7 + bobPhase) * 0.04;
+    g.position.set(peer.cx, bob + peer.cy, peer.cz);
+    g.rotation.y = peer.cry;
+    const bowRemain = peer.bowUntil - Date.now();
+    if (bowRemain > 0) {
+      g.rotation.x = bowAngle(1 - bowRemain / 2_600);
+    } else {
+      g.rotation.x *= Math.max(0, 1 - dt * 8);
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[peer.cx, 0, peer.cz]}>
+      <LanternFigure name={peer.name || "訪客"} />
+      {bubble ? <ChatBubble text={bubble} /> : null}
+    </group>
+  );
+}
+
+/** 所有其他訪客的身影。peersVersion 變動(進場/離場)時重建列表。 */
+function PeerAvatars({
+  peersRef,
+  peersVersion,
+  bubbles,
+}: {
+  peersRef: React.MutableRefObject<Map<string, PeerState>>;
+  peersVersion: number;
+  bubbles: Map<string, { text: string; until: number }>;
+}): React.ReactElement {
+  // peersVersion 是刻意的重渲染觸發器;位置更新不經過 React
+  void peersVersion;
+  const peers = [...peersRef.current.values()].slice(0, 24); // 上限防極端房間
+  return (
+    <>
+      {peers.map((p) => (
+        <PeerFigure key={p.id} peer={p} bubble={bubbles.get(p.id)?.text ?? null} />
+      ))}
+    </>
   );
 }

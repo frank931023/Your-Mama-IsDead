@@ -11,15 +11,17 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const variants: Record<Variant, string> = {
+  // 鎏金主按鈕:上亮下沉的燭光漸層 + 輝光,是全站唯一的高飽和元素
   primary:
-    "bg-ink text-paper hover:bg-ink-soft active:bg-ink disabled:bg-ink-muted disabled:text-paper/60",
+    "bg-gradient-to-b from-gold-soft via-gold to-gold-dark text-paper font-semibold shadow-glow hover:brightness-110 active:brightness-95 disabled:opacity-40 disabled:shadow-none",
   secondary:
-    "bg-gold text-ink hover:bg-gold-soft active:bg-gold-dark disabled:bg-gold/40",
-  ghost: "bg-transparent text-ink hover:bg-paper-soft disabled:text-ink-muted",
+    "border border-gold/35 bg-gold/10 text-gold-soft hover:border-gold/60 hover:bg-gold/15 active:bg-gold/20 disabled:opacity-40",
+  ghost:
+    "bg-transparent text-ink-muted hover:bg-ink/5 hover:text-ink disabled:text-ink-muted/50",
   outline:
-    "bg-transparent text-ink border border-ink/20 hover:border-gold hover:text-gold-dark disabled:opacity-50",
+    "bg-transparent text-ink border border-ink/15 hover:border-gold/50 hover:text-gold-soft disabled:opacity-40",
   danger:
-    "bg-red-700 text-paper hover:bg-red-800 active:bg-red-900 disabled:bg-red-300",
+    "bg-red-500/90 text-white hover:bg-red-500 active:bg-red-600 disabled:opacity-40",
 };
 
 const sizes: Record<Size, string> = {
@@ -35,10 +37,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-md font-medium",
-          "transition-colors focus-visible:outline-none focus-visible:ring-2",
-          "focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
-          "disabled:cursor-not-allowed",
+          "inline-flex items-center justify-center gap-2 rounded-lg font-medium",
+          "transition-all duration-200 active:scale-[0.985] focus-visible:outline-none",
+          "focus-visible:ring-2 focus-visible:ring-gold/70 focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
+          "disabled:cursor-not-allowed disabled:active:scale-100",
           variants[variant],
           sizes[size],
           className,

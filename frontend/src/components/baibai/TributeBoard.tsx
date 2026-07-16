@@ -45,7 +45,7 @@ export const TRIBUTE_OFFERINGS: OfferingDef[] = [
   { kind: "note", label: "留言", Icon: MessageSquare, placeholder: "此刻想對他說的話……", verb: "留下話語" },
 ];
 
-function offeringOf(kind: string): OfferingDef {
+export function offeringOf(kind: string): OfferingDef {
   return TRIBUTE_OFFERINGS.find((o) => o.kind === kind) ?? TRIBUTE_OFFERINGS[5]!;
 }
 
@@ -54,9 +54,11 @@ interface TributeBoardProps {
   theme: TributeBoardTheme;
   /** 送出一則留言後觸發 (例如解鎖儀式「留下話語」步驟)。 */
   onSubmitted?: (t: Tribute) => void;
+  /** 線上公祭:別人即時送出的供品(useCeremony 推進來),以 id 去重後插到最上面。 */
+  liveTribute?: Tribute | null;
 }
 
-export function TributeBoard({ tokenId, theme, onSubmitted }: TributeBoardProps): React.ReactElement {
+export function TributeBoard({ tokenId, theme, onSubmitted, liveTribute }: TributeBoardProps): React.ReactElement {
   const { address } = useAccount();
   const { showError } = useError();
   const [list, setList] = React.useState<Tribute[] | null>(null);
@@ -83,6 +85,17 @@ export function TributeBoard({ tokenId, theme, onSubmitted }: TributeBoardProps)
       cancelled = true;
     };
   }, [tokenId, showError]);
+
+  // 線上公祭:即時供品到達 → 去重後插到最上面(自己剛送出的那則
+  // 已由 submit 樂觀插入,廣播回音靠 id 擋掉)
+  React.useEffect(() => {
+    if (!liveTribute) return;
+    setList((prev) => {
+      if (!prev) return [liveTribute];
+      if (prev.some((t) => t.id === liveTribute.id)) return prev;
+      return [liveTribute, ...prev];
+    });
+  }, [liveTribute]);
 
   const offering = offeringOf(kind);
 
