@@ -200,7 +200,7 @@ function TabletCard({ tablet }: { tablet: TabletRecord }): React.ReactElement {
 
         <span
           className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
-            isPublic ? "bg-emerald-400/15 text-emerald-200" : "bg-ink/5 text-ink-muted"
+            isPublic ? "bg-emerald-100 text-emerald-900" : "bg-ink/5 text-ink-muted"
           }`}
         >
           {isPublic ? "哀悼版公開中" : "哀悼版未公開"}

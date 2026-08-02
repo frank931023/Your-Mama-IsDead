@@ -101,7 +101,7 @@ export function ConsentForm({
           聲明{value.signature ? "(含簽名)" : ""}
         </p>
       ) : null}
-      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+      {error ? <p className="text-xs text-red-700">{error}</p> : null}
     </div>
   );
 }

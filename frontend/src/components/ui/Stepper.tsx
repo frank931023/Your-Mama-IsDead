@@ -24,10 +24,10 @@ export function Stepper({ steps, current, className }: StepperProps): React.Reac
           <li key={s.id} className="flex flex-1 min-w-[140px] items-start gap-3">
             <div
               className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-semibold transition-colors",
-                done && "border-gold/70 bg-gold text-paper",
-                active && "border-gold/60 bg-gold/10 text-gold-soft shadow-glow",
-                !done && !active && "border-ink/15 bg-paper-soft text-ink-muted",
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-semibold",
+                done && "border-gold bg-gold text-ink",
+                active && "border-ink bg-paper text-ink",
+                !done && !active && "border-ink/20 bg-paper text-ink-muted",
               )}
               aria-current={active ? "step" : undefined}
             >

@@ -626,14 +626,14 @@ export default function TabletDetailPage(): React.ReactElement {
                           <span>正在生成克隆聲音(IndexTTS2,可能需要幾十秒)……</span>
                         </div>
                       ) : draft.voiceLabel ? (
-                        <div className="flex items-center gap-2 text-sm text-emerald-300">
+                        <div className="flex items-center gap-2 text-sm text-emerald-700">
                           <Check className="h-4 w-4" aria-hidden />
                           <span>
                             已生成克隆聲音 ✓ (<code className="text-xs">{draft.voiceLabel}</code>),保存上鏈後生效。
                           </span>
                         </div>
                       ) : audioChoices.length > 0 ? (
-                        <p className="text-xs text-amber-300">
+                        <p className="text-xs text-amber-700">
                           有錄音但還沒生成克隆聲音 —— 在下方挑一段點「生成克隆聲音」即可。
                         </p>
                       ) : null}
@@ -981,7 +981,7 @@ function MemorialSettingsTab({
               </span>
               <span className="text-sm">
                 {currentPublic ? (
-                  <span className="text-emerald-300">● 已公開 — 出現在線上紀念館</span>
+                  <span className="text-emerald-700">● 已公開 — 出現在線上紀念館</span>
                 ) : (
                   <span className="text-ink-muted">○ 未公開 — 僅持有連結者可見</span>
                 )}

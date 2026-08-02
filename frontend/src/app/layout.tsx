@@ -2,36 +2,18 @@
  * Next.js App Router root layout
  *
  * 包住所有頁面共用的 chrome:
- *   - <SiteHeader>  頂部導覽列 + 錢包連線按鈕(client, 見 SiteChrome.tsx)
+ *   - <SiteHeader>  頂部導覽列 + 錢包連線按鈕
  *   - <main>        實際頁面內容
- *   - <SiteFooter>  底部品牌/導覽/信任層
+ *   - <SiteFooter>  底部版權聲明
  *
- * 字體用 next/font 自載(思源宋體/黑體),以 CSS 變數餵給 tailwind 的
- * font-serif / font-sans;CJK 字體走 unicode-range 切片、不預載全量。
  * Providers 在內層套上 wagmi / RainbowKit / 錯誤 modal context。
  */
 import type { Metadata } from "next";
-import { Noto_Sans_TC, Noto_Serif_TC } from "next/font/google";
+import Link from "next/link";
 
 import "./globals.css";
 import { Providers } from "./providers";
-import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
-
-const fontSans = Noto_Sans_TC({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-sans",
-  display: "swap",
-  preload: false,
-});
-
-const fontSerif = Noto_Serif_TC({
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "900"],
-  variable: "--font-serif",
-  display: "swap",
-  preload: false,
-});
+import { WalletConnect } from "@/components/WalletConnect";
 
 export const metadata: Metadata = {
   title: "Aeterlux · 數位記憶燈塔",
@@ -46,9 +28,7 @@ export default function RootLayout({
 }): React.ReactElement {
   return (
     <html lang="zh-Hant">
-      <body
-        className={`${fontSans.variable} ${fontSerif.variable} flex min-h-screen flex-col font-sans`}
-      >
+      <body className="min-h-screen flex flex-col">
         <Providers>
           <SiteHeader />
           <main className="flex-1">{children}</main>
@@ -56,5 +36,55 @@ export default function RootLayout({
         </Providers>
       </body>
     </html>
+  );
+}
+
+function SiteHeader(): React.ReactElement {
+  return (
+    <header className="border-b border-ink/10 bg-paper/85 backdrop-blur-sm">
+      <div className="container-page flex h-16 items-center justify-between gap-4">
+        <Link href="/" className="flex items-center gap-2">
+          <span className="font-serif text-xl tracking-wide text-ink">Aeterlux</span>
+          <span className="hidden text-xs uppercase tracking-[0.3em] text-ink-muted sm:block">
+            數位記憶燈塔
+          </span>
+        </Link>
+        <nav className="flex items-center gap-1 text-sm">
+          <NavLink href="/about">關於</NavLink>
+          <NavLink href="/mint">建立燈塔</NavLink>
+          <NavLink href="/dashboard">燈塔典藏</NavLink>
+          <NavLink href="/registry">燈塔總覽</NavLink>
+          <NavLink href="/baibai">線上紀念館</NavLink>
+        </nav>
+        <div className="hidden md:block">
+          <WalletConnect compact />
+        </div>
+      </div>
+      <div className="container-page pb-3 md:hidden">
+        <WalletConnect compact />
+      </div>
+    </header>
+  );
+}
+
+function NavLink({ href, children }: { href: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <Link
+      href={href}
+      className="rounded-md px-3 py-2 text-ink-muted transition-colors hover:bg-paper-soft hover:text-ink"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SiteFooter(): React.ReactElement {
+  return (
+    <footer className="border-t border-ink/10 bg-paper-soft/50">
+      <div className="container-page flex flex-col gap-2 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
+        <p>© Aeterlux Prototype · Sovereign Digital Ancestor System</p>
+        <p>區塊鏈不可篡改性 · Arweave 永久封存 · 生成式 AI 賦予記憶生命</p>
+      </div>
+    </footer>
   );
 }

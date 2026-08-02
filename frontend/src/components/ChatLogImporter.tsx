@@ -64,7 +64,7 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-md border border-amber-500/40 bg-amber-400/10 p-3 text-xs text-amber-200">
+      <div className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-xs text-amber-900">
         對話紀錄可能含有活人個資。Prototype 會將檔案永久存入 IPFS,請只上傳已逝者單方訊息或已取得對話對象同意之內容。
       </div>
 

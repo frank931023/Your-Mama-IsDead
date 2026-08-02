@@ -23,9 +23,9 @@ import {
 import { waitForTransactionReceipt } from "wagmi/actions";
 import type { Address, Hex } from "viem";
 
-import { DIGITAL_TABLET_ABI } from "./contract";
-import { useActiveChainId, useContractAddress } from "./app-config";
+import { CONTRACT_ADDRESS, DIGITAL_TABLET_ABI } from "./contract";
 import { fetchAuthNonce, verifySiwe } from "./api";
+import { ACTIVE_CHAIN_ID } from "./wagmi";
 
 /**
  * 手工組 EIP-4361 SIWE 訊息字串。
@@ -120,7 +120,6 @@ function writeToken(
  */
 export function useSiweLogin(tokenId?: string | number): SiweLoginState {
   const { address, chainId } = useAccount();
-  const activeChainId = useActiveChainId();
   const { signMessageAsync } = useSignMessage();
   const [token, setToken] = useState<string | null>(() => readToken(address, tokenId));
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -133,7 +132,7 @@ export function useSiweLogin(tokenId?: string | number): SiweLoginState {
 
   const login = useCallback(async (): Promise<string> => {
     if (!address) throw new Error("Wallet not connected");
-    const cid = chainId ?? activeChainId;
+    const cid = chainId ?? ACTIVE_CHAIN_ID;
     setIsLoggingIn(true);
     setError(null);
     try {
@@ -191,32 +190,31 @@ export function useMintTablet(): {
   error: Error | null;
 } {
   const { writeContractAsync, isPending, error } = useWriteContract();
-  const contractAddress = useContractAddress();
 
   const mintRoot = useCallback(
     async (to: Address, metadataUri: string): Promise<MintResult> => {
       const hash = await writeContractAsync({
         abi: DIGITAL_TABLET_ABI,
-        address: contractAddress,
+        address: CONTRACT_ADDRESS,
         functionName: "mintRoot",
         args: [to, metadataUri],
       });
       return { hash };
     },
-    [writeContractAsync, contractAddress],
+    [writeContractAsync],
   );
 
   const mintWithParent = useCallback(
     async (to: Address, parentId: bigint, metadataUri: string): Promise<MintResult> => {
       const hash = await writeContractAsync({
         abi: DIGITAL_TABLET_ABI,
-        address: contractAddress,
+        address: CONTRACT_ADDRESS,
         functionName: "safeMintWithParent",
         args: [to, parentId, metadataUri],
       });
       return { hash };
     },
-    [writeContractAsync, contractAddress],
+    [writeContractAsync],
   );
 
   return { mintRoot, mintWithParent, isPending, error: (error as Error | null) ?? null };
@@ -232,18 +230,17 @@ export function useSetArtifactURI(tokenId: bigint | string | number): {
   error: Error | null;
 } {
   const { writeContractAsync, isPending, error } = useWriteContract();
-  const contractAddress = useContractAddress();
 
   const setArtifactURI = useCallback(
     async (uri: string): Promise<Hex> => {
       return writeContractAsync({
         abi: DIGITAL_TABLET_ABI,
-        address: contractAddress,
+        address: CONTRACT_ADDRESS,
         functionName: "setArtifactURI",
         args: [BigInt(tokenId), uri],
       });
     },
-    [writeContractAsync, tokenId, contractAddress],
+    [writeContractAsync, tokenId],
   );
 
   return { setArtifactURI, isPending, error: (error as Error | null) ?? null };
@@ -261,18 +258,17 @@ export function useSetTokenURI(tokenId: bigint | string | number): {
   error: Error | null;
 } {
   const { writeContractAsync, isPending, error } = useWriteContract();
-  const contractAddress = useContractAddress();
 
   const setTokenURI = useCallback(
     async (uri: string): Promise<Hex> => {
       return writeContractAsync({
         abi: DIGITAL_TABLET_ABI,
-        address: contractAddress,
+        address: CONTRACT_ADDRESS,
         functionName: "setTokenURI",
         args: [BigInt(tokenId), uri],
       });
     },
-    [writeContractAsync, tokenId, contractAddress],
+    [writeContractAsync, tokenId],
   );
 
   return { setTokenURI, isPending, error: (error as Error | null) ?? null };
@@ -398,6 +394,5 @@ async function hkdfAesKey(ikm: Uint8Array, context: string, tokenId: bigint): Pr
 
 export function useIsCorrectChain(): { isCorrect: boolean; expected: number; current: number | undefined } {
   const current = useChainId();
-  const expected = useActiveChainId();
-  return { isCorrect: current === expected, expected, current };
+  return { isCorrect: current === ACTIVE_CHAIN_ID, expected: ACTIVE_CHAIN_ID, current };
 }

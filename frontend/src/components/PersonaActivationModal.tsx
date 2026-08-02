@@ -79,7 +79,7 @@ export function PersonaActivationModal({ tokenId, metadata, open, onClose }: Pro
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 py-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 px-4 py-8"
       role="dialog"
       aria-modal="true"
       aria-labelledby="persona-modal-title"
@@ -159,7 +159,7 @@ export function PersonaActivationModal({ tokenId, metadata, open, onClose }: Pro
         </div>
 
         {!loadingStatus && !chatReady && !avatarReady ? (
-          <div className="mx-6 mb-6 flex items-start gap-2 rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-200">
+          <div className="mx-6 mb-6 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             <div>
               互動服務尚未就緒。請聯絡管理員確認 render 渲染機已啟動,或 <code>.env</code> 已設定{" "}

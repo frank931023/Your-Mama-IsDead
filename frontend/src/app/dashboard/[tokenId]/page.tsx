@@ -199,8 +199,8 @@ const STORY_FILTERS: Array<{ id: StoryFilter; label: string }> = [
 ];
 
 const STORY_STATUS_META: Record<StoryStatus, { label: string; cls: string }> = {
-  PENDING: { label: "待審核", cls: "bg-amber-400/15 text-amber-200" },
-  APPROVED: { label: "已公開", cls: "bg-emerald-400/15 text-emerald-200" },
+  PENDING: { label: "待審核", cls: "bg-amber-100 text-amber-900" },
+  APPROVED: { label: "已公開", cls: "bg-emerald-100 text-emerald-900" },
   REJECTED: { label: "已隱藏", cls: "bg-ink/10 text-ink-muted" },
   ONCHAIN: { label: "已上鏈", cls: "bg-gold/20 text-gold-dark" },
 };
@@ -380,7 +380,7 @@ function StoryManager({ tablet }: { tablet: TabletRecord }): React.ReactElement 
           </Button>
         </div>
         {reindexDone ? (
-          <p className="w-full text-xs text-emerald-300">
+          <p className="w-full text-xs text-emerald-700">
             記憶索引已重建:{reindexDone.chatlogsProcessed} 份對話紀錄
             {typeof reindexDone.storiesProcessed === "number"
               ? `、${reindexDone.storiesProcessed} 則回憶`
