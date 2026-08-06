@@ -20,6 +20,7 @@ import axios, { AxiosError } from "axios";
 import FormData from "form-data";
 import { env } from "../lib/env.js";
 import { getStorageMode } from "../lib/runtime-config.js";
+import { uploadBufferToArweave } from "../lib/arweave.js";
 
 const PresignBody = z.object({
   filename: z.string().min(1).max(256),
@@ -198,8 +199,18 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       }
     }
 
+    // 先整包進記憶體:Pinata 與 Arweave 雙寫需要重複讀同一份內容。
+    // 大小上限由 @fastify/multipart 的 limits 把關,相片級檔案沒問題。
+    let fileBuf: Buffer;
+    try {
+      fileBuf = await filePart.toBuffer();
+    } catch (err) {
+      request.log.error({ err }, "relay buffer read failed");
+      return reply.code(400).send({ error: "file_read_failed" });
+    }
+
     const form = new FormData();
-    form.append("file", filePart.file, {
+    form.append("file", fileBuf, {
       filename,
       contentType,
     });
@@ -209,22 +220,28 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     );
 
     try {
-      const res = await axios.post<PinataPinResponse>(PINATA_PIN_FILE, form, {
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-        headers: {
-          ...form.getHeaders(),
-          Authorization: `Bearer ${env.PINATA_JWT}`,
-        },
-        timeout: 120_000,
-        validateStatus: (s) => s >= 200 && s < 300,
-      });
+      // IPFS (主) 與 Arweave (永存備份) 並行雙寫;Arweave 失敗回 null 不擋。
+      const [res, arweave] = await Promise.all([
+        axios.post<PinataPinResponse>(PINATA_PIN_FILE, form, {
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          headers: {
+            ...form.getHeaders(),
+            Authorization: `Bearer ${env.PINATA_JWT}`,
+          },
+          timeout: 120_000,
+          validateStatus: (s) => s >= 200 && s < 300,
+        }),
+        uploadBufferToArweave(fileBuf, contentType, filename),
+      ]);
       return reply.send({
         cid: res.data.IpfsHash,
         uri: `ipfs://${res.data.IpfsHash}`,
         name: filename,
         contentType,
         size: res.data.PinSize,
+        // ar://<txid>;前端可原樣存進 metadata,gatewayUrl() 已支援解析
+        arweave,
       });
     } catch (err) {
       const status = err instanceof AxiosError ? err.response?.status : undefined;

@@ -36,6 +36,11 @@ const EnvSchema = z.object({
   // 預設空字串 = 不排除任何 token。
   EXCLUDED_TOKEN_IDS: z.string().default(""),
   PINATA_JWT: z.string().optional(),
+  // ── Arweave 永存層 (ArDrive Turbo) ────────────────────────────────
+  // Ethereum 私鑰 (0x hex)。設定後 relay 上傳與 story JSON 會同步永存到
+  // Arweave (lib/arweave.ts):<100KiB 免費,大檔需先在 turbo.ar.io 為同
+  // 一地址儲值 Turbo Credits。不設 = 永存層停用,一切照舊走 IPFS。
+  TURBO_PRIVATE_KEY: z.string().optional(),
   COMPUTE_URL: z.string().url().optional(),
   IPFS_GATEWAY: z.string().url().default("https://gateway.pinata.cloud/ipfs/"),
   TRAINER_API_KEY: z.string().optional(),

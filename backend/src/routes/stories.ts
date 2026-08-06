@@ -20,6 +20,7 @@ import { z } from "zod";
 import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
 import { pinJSON } from "../lib/ipfs.js";
+import { uploadJSONToArweave } from "../lib/arweave.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
 import { requireWriteAccess } from "../lib/access.js";
 import { indexApprovedStory, removeStoryChunks } from "../lib/rag.js";
@@ -151,21 +152,22 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const createdAtIso = new Date().toISOString();
 
     // 1. 先把 story 內容 pin 到 IPFS 拿不可竄改的 contentCid。
+    const storyPayload = {
+      v: 1,
+      type: "dsas-memorial-story",
+      tokenId: tokenId.toString(),
+      title: body.data.title.trim(),
+      body: body.data.body.trim(),
+      author: body.data.authorName?.trim() || null,
+      authorAddress,
+      photo: body.data.photoUri ?? null,
+      date: body.data.refDate ?? null,
+      createdAt: createdAtIso,
+    };
     let contentCid: string;
     try {
       const pinned = await pinJSON(
-        {
-          v: 1,
-          type: "dsas-memorial-story",
-          tokenId: tokenId.toString(),
-          title: body.data.title.trim(),
-          body: body.data.body.trim(),
-          author: body.data.authorName?.trim() || null,
-          authorAddress,
-          photo: body.data.photoUri ?? null,
-          date: body.data.refDate ?? null,
-          createdAt: createdAtIso,
-        },
+        storyPayload,
         `story-${tokenId.toString()}-${createdAtIso}`,
       );
       contentCid = pinned.cid;
@@ -177,6 +179,17 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       request.log.error({ err }, "story pin to IPFS failed");
       return reply.code(502).send({ error: "story_pin_failed" });
     }
+
+    // 1b. 同步永存一份到 Arweave (fire-and-forget,失敗不擋投稿)。
+    // 掛 Type/Token-Id tags,之後可用 Arweave GraphQL 依 tag 撈回,
+    // 完全不依賴我們的 DB;IPFS 的 contentCid 也一併記在 tag 裡對照。
+    void uploadJSONToArweave(storyPayload, `story-${tokenId.toString()}`, [
+      { name: "Type", value: "dsas-memorial-story" },
+      { name: "Token-Id", value: tokenId.toString() },
+      { name: "IPFS-CID", value: contentCid },
+    ]).then((ar) => {
+      if (ar) request.log.info({ arweaveId: ar.id, contentCid }, "story archived to Arweave");
+    });
 
     // 2. 存進 DB,狀態 PENDING。
     const created = await prisma.memorialStory.create({
