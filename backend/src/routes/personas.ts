@@ -5,6 +5,7 @@ import type { TabletMetadata } from "../../../shared/types/tablet.js";
 import { env } from "../lib/env.js";
 import { prisma } from "../db.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
+import { requireOwnerOrInvite } from "../lib/access.js";
 import {
   buildPersonaSystemPrompt,
   cloudProviderStatus,
@@ -240,7 +241,7 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   // 前端 LAM 模式每輪對話帶上 q,即可做到「每輪用問題檢索」的真 RAG。
   app.get(
     "/:tokenId/persona-prompt",
-    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    { preHandler: [requireOwnerOrInvite("tokenId")] },
     async (request, reply) => {
       const params = TokenIdParam.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
@@ -361,7 +362,7 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   // POST /api/personas/:tokenId/cloud-chat — auth + owner; SSE token stream.
   app.post(
     "/:tokenId/cloud-chat",
-    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    { preHandler: [requireOwnerOrInvite("tokenId")] },
     async (request, reply) => {
       const params = TokenIdParam.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
@@ -468,7 +469,7 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   // POST /api/personas/:tokenId/cloud-voice — auth + owner; returns mp3.
   app.post(
     "/:tokenId/cloud-voice",
-    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    { preHandler: [requireOwnerOrInvite("tokenId")] },
     async (request, reply) => {
       const body = z.object({ text: z.string().min(1).max(2000) }).safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: "invalid_body" });
@@ -490,7 +491,7 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   // { text } — the transcript, fed back into the chat flow client-side.
   app.post(
     "/:tokenId/cloud-stt",
-    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    { preHandler: [requireOwnerOrInvite("tokenId")] },
     async (request, reply) => {
       if (!request.isMultipart()) {
         return reply.code(400).send({ error: "expected_multipart" });

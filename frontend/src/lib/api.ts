@@ -10,7 +10,7 @@
  */
 import type { TabletMetadata } from "@shared/types/tablet";
 
-const RAW_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
+const RAW_BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:14000";
 export const BACKEND_URL = RAW_BACKEND.replace(/\/+$/, "");
 
 export interface UploadedAsset {
@@ -21,6 +21,9 @@ export interface UploadedAsset {
   size?: number;
 }
 
+/** 追悼頁可見度三態 (權威在後端 DB,屋主可即時切換)。 */
+export type TabletVisibility = "PUBLIC" | "UNLISTED" | "PRIVATE";
+
 export interface TabletRecord {
   tokenId: string; // bigint as string
   owner: string;
@@ -28,8 +31,10 @@ export interface TabletRecord {
   tokenURI: string;
   artifactURI: string | null;
   metadata: TabletMetadata | null;
-  /** 是否公開列在公開總覽 / baibai (來自 metadata.dsas.public,後端同步成真欄)。 */
+  /** (legacy) 鏈上 metadata.dsas.public 快照;權威可見度看 visibility。 */
   public?: boolean;
+  /** 追悼頁可見度 (PUBLIC / UNLISTED / PRIVATE)。 */
+  visibility?: TabletVisibility;
   createdAt: string;
 }
 
@@ -134,6 +139,69 @@ export async function getRegistry(): Promise<TabletRecord[]> {
 export async function getPublicRegistry(): Promise<TabletRecord[]> {
   const res = await fetch(`${BACKEND_URL}/api/tablets/registry/public`, { cache: "no-store" });
   return handle<TabletRecord[]>(res);
+}
+
+// ── 可見度 + 邀請碼 ─────────────────────────────────────────────────────────
+
+export interface TabletAccess {
+  tokenId: string;
+  visibility: TabletVisibility;
+  /** 這組碼 (或 PUBLIC) 能不能看哀悼版。owner 由前端比對錢包地址另行放行。 */
+  allowed: boolean;
+  codeValid: boolean;
+  owner: string;
+}
+
+/** 查這座塔位的可見度與邀請碼是否有效 (頁面進場閘門用)。 */
+export async function getTabletAccess(
+  tokenId: string | number,
+  code?: string | null,
+): Promise<TabletAccess> {
+  const qs = code ? `?code=${encodeURIComponent(code)}` : "";
+  const res = await fetch(`${BACKEND_URL}/api/tablets/${tokenId}/access${qs}`, {
+    cache: "no-store",
+  });
+  return handle<TabletAccess>(res);
+}
+
+export interface InviteInfo {
+  visibility: TabletVisibility;
+  code: string;
+}
+
+/** owner:讀邀請碼與目前可見度。 */
+export async function fetchInviteInfo(tokenId: string | number, jwt: string): Promise<InviteInfo> {
+  const res = await fetch(`${BACKEND_URL}/api/tablets/${tokenId}/invite`, {
+    headers: authHeaders(jwt),
+    cache: "no-store",
+  });
+  return handle<InviteInfo>(res);
+}
+
+/** owner:即時切換可見度 (DB-only,免簽名免 gas)。 */
+export async function setTabletVisibility(
+  tokenId: string | number,
+  visibility: TabletVisibility,
+  jwt: string,
+): Promise<InviteInfo> {
+  const res = await fetch(`${BACKEND_URL}/api/tablets/${tokenId}/visibility`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(jwt) },
+    body: JSON.stringify({ visibility }),
+  });
+  return handle<InviteInfo>(res);
+}
+
+/** owner:重新產生邀請碼 (舊碼立即失效)。 */
+export async function regenerateInviteCode(
+  tokenId: string | number,
+  jwt: string,
+): Promise<InviteInfo> {
+  const res = await fetch(`${BACKEND_URL}/api/tablets/${tokenId}/invite/regenerate`, {
+    method: "POST",
+    headers: authHeaders(jwt),
+  });
+  return handle<InviteInfo>(res);
 }
 
 export async function scanRegistry(): Promise<{ found: number; tablets: TabletRecord[] }> {
@@ -433,8 +501,10 @@ export async function listTributes(tokenId: string | number): Promise<Tribute[]>
 export async function createTribute(
   tokenId: string | number,
   body: { message: string; fromName?: string; fromAddress?: string; kind?: TributeKind },
+  inviteCode?: string | null,
 ): Promise<Tribute> {
-  const res = await fetch(`${BACKEND_URL}/api/tributes/${tokenId}`, {
+  const qs = inviteCode ? `?code=${encodeURIComponent(inviteCode)}` : "";
+  const res = await fetch(`${BACKEND_URL}/api/tributes/${tokenId}${qs}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -504,8 +574,10 @@ export async function createStory(
     photoUri?: string;
     refDate?: string;
   },
+  inviteCode?: string | null,
 ): Promise<StoryRecord> {
-  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}`, {
+  const qs = inviteCode ? `?code=${encodeURIComponent(inviteCode)}` : "";
+  const res = await fetch(`${BACKEND_URL}/api/stories/${tokenId}${qs}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

@@ -1,5 +1,5 @@
 ﻿# One-click dev setup. Everything runs in docker compose now:
-# postgres / redis / minio / backend (:4000) / frontend (:3000).
+# postgres / redis / minio / backend (:14000) / frontend (:3000).
 # Usage:  .\start.ps1
 #         .\start.ps1 -InfraOnly   (只起 postgres/redis/minio;想本機直跑
 #                                   backend/frontend 時用,見 README Manual Startup)
@@ -45,7 +45,7 @@ if ($code -ne 0) { throw "docker compose failed — is Docker Desktop running?" 
 
 Write-Host "`nAll up." -ForegroundColor Green
 Write-Host "  frontend  http://localhost:3000"
-Write-Host "  backend   http://localhost:4000"
+Write-Host "  backend   http://localhost:14000"
 Write-Host "`n首次啟動 backend/frontend 會在容器內 npm install + prisma migrate,可能需要幾分鐘。" -ForegroundColor DarkGray
 Write-Host "看啟動進度:  docker compose logs -f backend frontend" -ForegroundColor DarkGray
 Write-Host "全部關閉:    docker compose down" -ForegroundColor DarkGray

@@ -75,6 +75,14 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
   });
   // 進入 3D 靈堂(舊版拜拜畫面):點香 / 三鞠躬 / 留言 / 紀念卡都在那裡做。
   const [hallOpen, setHallOpen] = React.useState(false);
+  // ?hall=1 直接開靈堂 (分享連結 / 除錯用);mount 後才讀 URL,避免 SSR 水合不一致。
+  React.useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).has("hall")) setHallOpen(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
   // 「與他對話」→ 跟燈塔頁同一個互動形式選擇 modal (純文字 / 文字+人像 / 語音)。
   const [activationOpen, setActivationOpen] = React.useState(false);
 

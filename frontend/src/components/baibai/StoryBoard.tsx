@@ -17,6 +17,7 @@ import DOMPurify from "dompurify";
 import { Loader2, Send, ChevronDown, Settings2 } from "lucide-react";
 
 import { RichTextEditor } from "./RichTextEditor";
+import { getStoredInviteCode } from "@/lib/invite";
 
 import { Button } from "@/components/ui/Button";
 import { MediaUploader } from "@/components/MediaUploader";
@@ -155,13 +156,17 @@ function StoryComposer({
     if (!title.trim() || !body.trim()) return;
     setSubmitting(true);
     try {
-      const created = await createStory(tokenId, {
-        title: title.trim(),
-        body: body.trim(),
-        authorName: author.trim() || undefined,
-        photoUri: photo[0]?.uri,
-        refDate: refDate.trim() || undefined,
-      });
+      const created = await createStory(
+        tokenId,
+        {
+          title: title.trim(),
+          body: body.trim(),
+          authorName: author.trim() || undefined,
+          photoUri: photo[0]?.uri,
+          refDate: refDate.trim() || undefined,
+        },
+        getStoredInviteCode(tokenId),
+      );
       onCreated(created);
       reset();
       setOpen(false);

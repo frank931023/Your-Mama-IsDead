@@ -26,6 +26,7 @@ import { useError } from "@/components/ErrorDialog";
 import { SimliAvatar, type SimliAvatarHandle } from "@/components/SimliAvatar";
 import { LamAvatar, type LamAvatarHandle } from "@/components/LamAvatar";
 import { useSiweLogin } from "@/lib/wallet";
+import { inviteBearer } from "@/lib/invite";
 import { streamChat, type ChatMessage } from "@/lib/chat-stream";
 import {
   BACKEND_URL,
@@ -64,6 +65,11 @@ export function ChatInterface({
 }: ChatInterfaceProps): React.ReactElement {
   const { showError } = useError();
   const { login, logout, isLoggingIn, token, error: loginError } = useSiweLogin(tokenId);
+  // 邀請碼模式:不公開塔位的訪客憑邀請碼對話 (免錢包免 SIWE)。
+  // 後端接受 `Bearer invite:<code>` 當憑證 (見 backend lib/access.ts),
+  // 所以拿它直接當 jwt 用,前端其餘流程完全不變。owner 的 SIWE jwt 優先。
+  const inviteToken = inviteBearer(tokenId);
+  const authToken = token ?? inviteToken;
   const [tablet, setTablet] = React.useState<TabletRecord | null>(null);
   const [messages, setMessages] = React.useState<UiMessage[]>([]);
   const [input, setInput] = React.useState("");
@@ -127,9 +133,9 @@ export function ChatInterface({
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  // Trigger SIWE on mount
+  // Trigger SIWE on mount — 有邀請碼就不逼簽名 (訪客沒錢包)。
   React.useEffect(() => {
-    if (!token && !isLoggingIn) {
+    if (!token && !inviteToken && !isLoggingIn) {
       login().catch(() => {
         /* surfaced via loginError */
       });
@@ -190,7 +196,7 @@ export function ChatInterface({
   // pipeline. `send()` (form submit) wraps this with the input box value.
   const sendText = async (rawText: string): Promise<void> => {
     const text = rawText.trim();
-    if (!text || !token || sending) return;
+    if (!text || !authToken || sending) return;
     setSending(true);
 
     // Unlock audio NOW, synchronously, while we still have the user-gesture
@@ -227,7 +233,7 @@ export function ChatInterface({
     // prompt — 每轮都要按当前问题重新检索 (与缓存 personaPromptRef 的旧逻辑相反)。
     if (useLam) {
       try {
-        const { prompt: personaPrompt, memoryUsed, media } = await fetchPersonaPrompt(tokenId, token, text);
+        const { prompt: personaPrompt, memoryUsed, media } = await fetchPersonaPrompt(tokenId, authToken, text);
         // RAG 可觀測性:瀏覽器 console 直接看本輪注入了幾段記憶 (0 = 沒命中
         // / 沒上傳語料)。完整命中明細在「後端」console 的 [RAG] 日誌。
         console.log(
@@ -262,7 +268,7 @@ export function ChatInterface({
     abortRef.current = ctrl;
 
     try {
-      const full = await streamChat(tokenId, text, history, token, {
+      const full = await streamChat(tokenId, text, history, authToken, {
         signal: ctrl.signal,
         mode,
         onToken: (delta) => {
@@ -294,7 +300,7 @@ export function ChatInterface({
 
       // Auto-trigger voice on every reply. Portrait stays on-demand (button)
       // because cloud image gen is slow and costs money per call.
-      void triggerVoice(tokenId, full, token, mode).then((url) => {
+      void triggerVoice(tokenId, full, authToken, mode).then((url) => {
         if (!url) return;
         setLatestAudio(url);
         setMessages((prev) =>
@@ -402,12 +408,12 @@ export function ChatInterface({
   // STT the recorded blob, then push the transcript through the normal chat
   // pipeline (same as typing). Empty transcript (silence) is a no-op.
   const transcribeAndSend = async (blob: Blob): Promise<void> => {
-    if (!token) {
+    if (!authToken) {
       setRecState("idle");
       return;
     }
     try {
-      const text = await transcribeAudio(tokenId, blob, token);
+      const text = await transcribeAudio(tokenId, blob, authToken);
       setRecState("idle");
       if (text.trim()) await sendText(text);
     } catch (e) {
@@ -423,7 +429,7 @@ export function ChatInterface({
     };
   }, []);
 
-  if (loginError) {
+  if (loginError && !inviteToken) {
     return (
       <Card className="p-6 text-center">
         <AlertCircle className="mx-auto h-8 w-8 text-red-700" aria-hidden />
@@ -435,7 +441,7 @@ export function ChatInterface({
     );
   }
 
-  if (!token) {
+  if (!authToken) {
     return (
       <Card className="p-6 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-ink-muted" aria-hidden />
@@ -455,11 +461,11 @@ export function ChatInterface({
   // both layouts; only its sizing wrapper differs.
   // provider 决定用自建 LAM (WS + 浏览器 WebGL 3DGS) 还是 Simli 云。
   const avatarEl =
-    useLam && token ? (
+    useLam && authToken ? (
       <LamAvatar
         ref={lamRef}
         tokenId={tokenId}
-        jwt={token}
+        jwt={authToken}
         posterUrl={portraitToShow}
         className="h-full w-full"
         onAuthError={handleAvatarAuthError}
@@ -467,11 +473,11 @@ export function ChatInterface({
         onResponseDone={handleLamResponseDone}
         onError={handleLamError}
       />
-    ) : useAvatar && token ? (
+    ) : useAvatar && authToken ? (
       <SimliAvatar
         ref={simliRef}
         tokenId={tokenId}
-        jwt={token}
+        jwt={authToken}
         posterUrl={portraitToShow}
         className="h-full w-full"
         onAuthError={handleAvatarAuthError}

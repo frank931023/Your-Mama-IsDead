@@ -19,6 +19,7 @@
 import * as React from "react";
 import { BACKEND_URL } from "./api";
 import type { Tribute } from "./api";
+import { getStoredInviteCode } from "./invite";
 
 export type RitualKind = "bow" | "incense";
 
@@ -89,7 +90,11 @@ export function useCeremony(
 
     const connect = (): void => {
       if (disposed) return;
-      const url = `${BACKEND_URL.replace(/^http/, "ws")}/api/ceremony/${tokenId}/ws`;
+      // 不公開塔位的公祭房間要驗邀請碼 (?code=);公開塔位帶了也無妨。
+      const code = getStoredInviteCode(tokenId);
+      const url = `${BACKEND_URL.replace(/^http/, "ws")}/api/ceremony/${tokenId}/ws${
+        code ? `?code=${encodeURIComponent(code)}` : ""
+      }`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 

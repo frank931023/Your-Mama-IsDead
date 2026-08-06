@@ -53,6 +53,7 @@ import {
 } from "@/lib/api";
 import { useSetTokenURI, useSiweLogin, useWaitForReceipt } from "@/lib/wallet";
 import { buildAndSaveTabletMetadata, type TabletSaveStage } from "@/lib/tablet-save";
+import { MemorialSettings } from "@/components/MemorialSettings";
 import { displayName, formatDate, ipfsToHttps, truncateAddress } from "@/lib/utils";
 import type { Story } from "@shared/types/tablet";
 
@@ -73,6 +74,16 @@ function ManageInner({ tokenId }: { tokenId: string }): React.ReactElement {
 
   const [tablet, setTablet] = React.useState<TabletRecord | null>(null);
   const [loading, setLoading] = React.useState(true);
+
+  // 外觀與公開「套用並上鏈」後要重拉,讓管理頁反映最新 metadata。
+  const reload = React.useCallback(async (): Promise<void> => {
+    try {
+      const t = await fetchTablet(tokenId);
+      setTablet(t);
+    } catch (e) {
+      showError("讀取燈塔失敗", e instanceof Error ? e.message : String(e));
+    }
+  }, [tokenId, showError]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -129,13 +140,25 @@ function ManageInner({ tokenId }: { tokenId: string }): React.ReactElement {
     );
   }
 
-  return <ManageBody tablet={tablet} />;
+  return <ManageBody tablet={tablet} onReload={reload} />;
 }
 
 // ── 管理主體 (確認是 owner 後才渲染) ────────────────────────────────────────
 
-function ManageBody({ tablet }: { tablet: TabletRecord }): React.ReactElement {
+function ManageBody({
+  tablet,
+  onReload,
+}: {
+  tablet: TabletRecord;
+  onReload: () => Promise<void>;
+}): React.ReactElement {
   const tokenId = tablet.tokenId;
+  // 外觀與公開設定的上鏈簽名 (與 StoryManager 內的 hooks 各自獨立,token 共用 sessionStorage)。
+  const { setTokenURI } = useSetTokenURI(tokenId);
+  const waitForReceipt = useWaitForReceipt();
+  const { token, login } = useSiweLogin(tokenId);
+  // 隱私模式 / 邀請碼端點需要 owner jwt;沒有就觸發一次 SIWE。
+  const requestJwt = React.useCallback(async () => token ?? (await login()), [token, login]);
 
   return (
     <>
@@ -152,7 +175,7 @@ function ManageBody({ tablet }: { tablet: TabletRecord }): React.ReactElement {
             管理:{displayName(tablet.metadata, tokenId)}
           </h1>
           <p className="mt-1 text-sm text-ink-muted">
-            審核哀悼版的回憶投稿、管理留言板。通過的回憶會公開展示,並成為他記憶的一部分。
+            這座燈塔的總管理:外觀與公開設定、回憶投稿審核、留言板管理都在這裡。
           </p>
         </div>
         <div className="flex gap-2">
@@ -170,11 +193,24 @@ function ManageBody({ tablet }: { tablet: TabletRecord }): React.ReactElement {
         </div>
       </header>
 
-      <Tabs defaultValue="stories">
+      <Tabs defaultValue="settings">
         <TabsList>
+          <TabsTrigger value="settings">外觀與公開</TabsTrigger>
           <TabsTrigger value="stories">回憶審核</TabsTrigger>
           <TabsTrigger value="tributes">留言管理</TabsTrigger>
         </TabsList>
+        <TabsContent value="settings">
+          <MemorialSettings
+            tokenId={tokenId}
+            meta={tablet.metadata}
+            isOwner
+            setTokenURI={setTokenURI}
+            waitForReceipt={waitForReceipt}
+            jwt={token}
+            requestJwt={requestJwt}
+            onSaved={onReload}
+          />
+        </TabsContent>
         <TabsContent value="stories">
           <StoryManager tablet={tablet} />
         </TabsContent>

@@ -17,7 +17,8 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest 
 import { z } from "zod";
 import type { TabletMetadata } from "../../../shared/types/tablet.js";
 import { prisma } from "../db.js";
-import { requireAuth, requireOwner } from "../auth/middleware.js";
+import { requireAuth } from "../auth/middleware.js";
+import { requireOwnerOrInvite } from "../lib/access.js";
 import {
   buildAvatar,
   buildVoice,
@@ -127,7 +128,7 @@ export const avatarSessionRoutes: FastifyPluginAsync = async (app: FastifyInstan
   // token, 回传前端开 WS 直连渲染机所需的全部信息 (wsUrl/token/renderBase/labels)。
   app.post(
     "/:tokenId/avatar-session",
-    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    { preHandler: [requireOwnerOrInvite("tokenId")] },
     async (request, reply) => {
       const params = TokenIdParam.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });

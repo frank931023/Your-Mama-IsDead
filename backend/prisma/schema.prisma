@@ -33,6 +33,16 @@ enum StoryStatus {
   ONCHAIN
 }
 
+/// 追悼頁可見度三態。
+///   PUBLIC   公開:列在線上紀念館,任何人可看
+///   UNLISTED 不公開:不列出;知道邀請碼的人可看哀悼版/拜拜/對話
+///   PRIVATE  私人:僅屋主 (邀請碼無效)
+enum TabletVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
 model Tablet {
   tokenId       BigInt        @id
   owner         String
@@ -40,9 +50,15 @@ model Tablet {
   tokenURI      String
   artifactURI   String?
   metadataJson  Json?
-  /// 是否公開列在公開總覽 / baibai。每次 syncOnce 從 metadata.dsas.public 同步,
-  /// 用真欄 (而非每次讀快取 JSON) 才能讓 /registry/public 直接用 query 過濾。
+  /// (legacy) 鏈上 metadata.dsas.public 的快照。權威可見度已改用 visibility 欄
+  /// (DB-only,屋主免簽名即時切換;邀請碼不能上鏈,鏈上/IPFS 全世界可讀)。
   public        Boolean       @default(false)
+  /// 追悼頁可見度 (權威來源)。syncOnce 只在「首次建立」時依 metadata.public 給預設,
+  /// 之後只由 PATCH /visibility 改,不被鏈上同步覆蓋。
+  visibility    TabletVisibility @default(UNLISTED)
+  /// 邀請碼:UNLISTED 模式下憑此看哀悼版/拜拜/對話。只存 DB、絕不上鏈。
+  /// 屋主可重新產生 (舊碼立即失效)。
+  inviteCode    String        @default("")
   syncedAt      DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -51,6 +67,7 @@ model Tablet {
   @@index([owner])
   @@index([parentTokenId])
   @@index([public])
+  @@index([visibility])
 }
 
 model TrainingJob {

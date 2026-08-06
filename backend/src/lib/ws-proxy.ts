@@ -20,6 +20,36 @@ import { env } from "./env.js";
 
 const PROXY_PATH = "/api/avatar/ws";
 
+/**
+ * 安全關閉一個 WebSocket，永不 throw。
+ *
+ * `ws.close(code)` 只接受合法的 application close code —— 1000 或 3000-4999。
+ * 保留碼 (1005 / 1006 / 1015 等) 禁止透過 close() 送出,傳進去 `ws` 會直接
+ * throw「First argument must be a valid error code number」;而 1006 (異常斷線)
+ * 正是連線掉線時最常見的碼。上游斷線把它原樣轉發給下游就會炸掉整個 process。
+ *
+ * 這裡把不合法的碼一律正規化成 1011 (internal error),reason 截到 123 bytes
+ * (ws 對 reason 長度也有限制),並整個包在 try/catch,保證代理絕不因對端亂關而崩。
+ */
+function safeCloseWs(sock: WebSocket, code?: number, reason?: unknown): void {
+  try {
+    const valid = typeof code === "number" && (code === 1000 || (code >= 3000 && code <= 4999));
+    const safeCode = valid ? code : 1011;
+    let safeReason: string | undefined;
+    if (reason != null) {
+      const s = Buffer.isBuffer(reason) ? reason.toString("utf8") : String(reason);
+      if (s) safeReason = Buffer.byteLength(s) > 123 ? s.slice(0, 60) : s;
+    }
+    sock.close(safeCode, safeReason);
+  } catch {
+    try {
+      sock.close();
+    } catch {
+      /* 最後手段:連無參數 close 都失敗就放棄,別讓它冒泡崩 process */
+    }
+  }
+}
+
 export function attachAvatarWsProxy(server: HttpServer, log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void; error: (o: unknown, m?: string) => void }): void {
   // noServer 模式:我們自己處理 upgrade,只接管 PROXY_PATH,其餘交還 (避免和
   // 未來其他 ws 用途衝突)。
@@ -72,11 +102,11 @@ export function attachAvatarWsProxy(server: HttpServer, log?: { info: (o: unknow
         }
       });
       upstream.on("close", (code, reason) => {
-        if (client.readyState === WebSocket.OPEN) client.close(code >= 1000 && code <= 4999 ? code : 1011, reason);
+        if (client.readyState === WebSocket.OPEN) safeCloseWs(client, code, reason);
       });
       upstream.on("error", (err) => {
         log?.warn({ err }, "avatar ws proxy: upstream error");
-        if (client.readyState === WebSocket.OPEN) client.close(1011, "upstream error");
+        if (client.readyState === WebSocket.OPEN) safeCloseWs(client, 1011, "upstream error");
       });
 
       // 瀏覽器 → 渲染機。

@@ -26,7 +26,7 @@ const EnvSchema = z.object({
   SIWE_DOMAIN: z.string().min(1),
 
   // optional
-  BACKEND_PORT: z.coerce.number().int().positive().default(4000),
+  BACKEND_PORT: z.coerce.number().int().positive().default(14000),
   BACKEND_HOST: z.string().default("0.0.0.0"),
   FRONTEND_URL: z.string().url().optional(),
 
@@ -91,7 +91,7 @@ const EnvSchema = z.object({
   // storage mode "local" 時檔案落地目錄(容器內路徑,掛 named volume)
   LOCAL_UPLOAD_DIR: z.string().default("/data/local-uploads"),
   // 組本地檔案對外 URI 用的 origin(瀏覽器要打得到)
-  PUBLIC_BACKEND_ORIGIN: z.string().url().default("http://localhost:4000"),
+  PUBLIC_BACKEND_ORIGIN: z.string().url().default("http://localhost:14000"),
 
   // Self-hosted LAM render machine (YMID-RENDER-API). Reached over Tailscale.
   // Handles LLM + voice clone (IndexTTS2) + audio2expression (LAM A2E) +

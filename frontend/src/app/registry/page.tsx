@@ -1,7 +1,11 @@
 "use client";
 
 /**
- * 燈塔總覽頁 (/registry) — 公開哀悼版展示館
+ * 線上紀念館 (/registry) — 公開哀悼版展示館
+ *
+ * 原本「燈塔總覽 (/registry)」與「線上紀念館 (/baibai)」功能完全重複
+ * (同樣拉公開塔位列表、同樣進 /memorial/[tokenId]),已合併成這一頁;
+ * /baibai 舊網址會轉址過來。
  *
  * 任何人都能在這裡瀏覽「已公開」的哀悼版,點進去就是該位逝者的追悼頁
  * (/memorial/[tokenId]):看生平、照片、親友回憶,獻上一炷香。
@@ -46,10 +50,10 @@ export default function RegistryPage(): React.ReactElement {
   return (
     <div className="container-page py-10">
       <header className="mx-auto mb-8 max-w-2xl text-center">
-        <p className="mb-2 text-xs uppercase tracking-[0.4em] text-gold-dark">公開哀悼版</p>
-        <h1 className="font-serif text-3xl text-ink sm:text-4xl">燈塔總覽</h1>
+        <p className="mb-2 text-xs uppercase tracking-[0.4em] text-gold-dark">公開哀悼版 · 燈塔總覽</p>
+        <h1 className="font-serif text-3xl text-ink sm:text-4xl">線上紀念館</h1>
         <p className="mt-3 text-sm leading-relaxed text-ink-muted">
-          這裡是所有家屬選擇公開的追悼頁。
+          這裡是所有家屬選擇公開的追悼頁。選擇您想追思的人,進入他的紀念空間。
           <br />
           每一座燈塔背後,都是一段願意被記得、也願意被分享的人生。
         </p>

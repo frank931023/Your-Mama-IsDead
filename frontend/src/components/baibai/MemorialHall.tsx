@@ -20,7 +20,8 @@
 import * as React from "react";
 import { useAccount } from "wagmi";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Billboard, OrbitControls, Text, Html } from "@react-three/drei";
+import { Billboard, OrbitControls, Text, Html, useTexture } from "@react-three/drei";
+import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import { WebGLGuard } from "./WebGLGuard";
 import * as THREE from "three";
 import { ChevronLeft, Hand, Flame, Footprints, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
@@ -42,9 +43,93 @@ interface MemorialHallProps {
   showXiaojing?: boolean;
 }
 
+// ─── 靈堂風格 (中式 / 西式) ─────────────────────────────────────────────
+// 使用者可在頂欄即時切換,選擇存 localStorage。差異走「同一場景、不同參數」:
+// 光線色溫、地板/牆面色調、布幔配色、奠匾與輓聯有無、燈籠色。
+
+export type HallStyleId = "zh" | "west";
+
+interface HallStyleDef {
+  id: HallStyleId;
+  label: string;
+  /** Canvas 背景 / 霧色 */
+  bg: string;
+  /** 環境光顏色與強度 (色溫差異的主力) */
+  ambient: { color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  /** 地板 / 牆面在貼圖上的色調 tint */
+  floorTint: string;
+  wallTint: string;
+  /** 布幔 (Backdrop) 色調 tint 與簾頭色 */
+  curtainTint: string;
+  pelmet: string;
+  /** 中式元素:奠字圓匾 + 輓聯 */
+  showMedallion: boolean;
+  showCouplets: boolean;
+  /** 燈籠色調 */
+  lanternColor: string;
+  lanternEmissive: string;
+}
+
+const HALL_STYLES: Record<HallStyleId, HallStyleDef> = {
+  zh: {
+    id: "zh",
+    label: "中式",
+    bg: "#eae2d2",
+    ambient: { color: "#fff3de", intensity: 0.62 },
+    hemi: { sky: "#fff6e6", ground: "#9c8f7c", intensity: 0.55 },
+    floorTint: "#cbb9a0",
+    wallTint: "#efe5d2",
+    curtainTint: "#ffffff",
+    pelmet: "#3c3630",
+    showMedallion: true,
+    showCouplets: true,
+    lanternColor: "#f6efdf",
+    lanternEmissive: "#e8c882",
+  },
+  west: {
+    id: "west",
+    label: "西式",
+    bg: "#eef0f2",
+    ambient: { color: "#f6f8ff", intensity: 0.7 },
+    hemi: { sky: "#ffffff", ground: "#aeb2b8", intensity: 0.6 },
+    floorTint: "#d8cdbc",
+    wallTint: "#f2f2ee",
+    curtainTint: "#eef1f6",
+    pelmet: "#7d8794",
+    showMedallion: false,
+    showCouplets: false,
+    lanternColor: "#ffffff",
+    lanternEmissive: "#dfe8ff",
+  },
+};
+
+const HALL_STYLE_KEY = "dsas:hall-style";
+
+function readHallStyle(): HallStyleId {
+  if (typeof window === "undefined") return "zh";
+  try {
+    const v = window.localStorage.getItem(HALL_STYLE_KEY);
+    return v === "west" ? "west" : "zh";
+  } catch {
+    return "zh";
+  }
+}
+
 export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialHallProps): React.ReactElement {
   const { showError } = useError();
   const { address } = useAccount();
+  // 靈堂風格 (中式/西式),存 localStorage
+  const [hallStyle, setHallStyle] = React.useState<HallStyleId>(() => readHallStyle());
+  const styleDef = HALL_STYLES[hallStyle];
+  const switchStyle = (id: HallStyleId): void => {
+    setHallStyle(id);
+    try {
+      window.localStorage.setItem(HALL_STYLE_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  };
   // ── 線上公祭:presence + 儀式/供品即時廣播 + 化身走動 ─────────────
   const [walkMode, setWalkMode] = React.useState(false);
   const [hotspotHint, setHotspotHint] = React.useState<string | null>(null);
@@ -255,7 +340,23 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           <ChevronLeft className="h-4 w-4" aria-hidden />
           離開紀念空間
         </Button>
-        <div className="pointer-events-none rounded-md bg-black/40 px-4 py-2 text-center text-ink backdrop-blur-sm">
+        {/* 靈堂風格切換 (中式 / 西式) */}
+        <div className="pointer-events-auto ml-2 inline-flex overflow-hidden rounded-md border border-ink/15 bg-paper/80 text-xs backdrop-blur-sm">
+          {(Object.values(HALL_STYLES) as HallStyleDef[]).map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => switchStyle(s.id)}
+              aria-pressed={hallStyle === s.id}
+              className={`px-3 py-1.5 transition-colors ${
+                hallStyle === s.id ? "bg-ink text-paper" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <div className="pointer-events-none rounded-md bg-black/40 px-4 py-2 text-center text-paper backdrop-blur-sm">
           <p className="font-serif text-xl">{displayName(meta, tablet.tokenId)}</p>
           {meta?.dsas.deceased.birth?.date || meta?.dsas.deceased.death?.date ? (
             <p className="text-xs opacity-80">
@@ -275,8 +376,8 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
 
       {/* 走動模式操作提示 */}
       {walkMode && !hudHidden ? (
-        <div className="pointer-events-none absolute left-1/2 top-20 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-1.5 text-xs text-ink/90 backdrop-blur-sm">
-          WASD 移動 · 空白鍵跳躍 · T 說話 · E 互動 · H 收合按鈕 · 拖曳環顧
+        <div className="pointer-events-none absolute left-1/2 top-20 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-1.5 text-xs text-paper/90 backdrop-blur-sm">
+          WASD 移動 · T 說話 · E 互動/坐下 · H 收合按鈕 · 拖曳環顧
         </div>
       ) : null}
 
@@ -301,7 +402,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
             autoFocus
             maxLength={120}
             placeholder="說點什麼…(Enter 送出、Esc 取消)"
-            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted/60 focus:outline-none"
+            className="w-full bg-transparent text-sm text-paper caret-gold placeholder:text-paper/50 focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === "Escape") setChatOpen(false);
             }}
@@ -322,7 +423,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         <button
           type="button"
           onClick={() => setHudHidden(false)}
-          className="absolute bottom-4 right-4 z-10 rounded-full bg-black/60 px-3 py-1.5 text-xs text-ink/80 backdrop-blur-sm transition-colors hover:text-ink"
+          className="absolute bottom-4 right-4 z-10 rounded-full bg-black/60 px-3 py-1.5 text-xs text-paper/80 backdrop-blur-sm transition-colors hover:text-paper"
         >
           H 顯示操作列
         </button>
@@ -330,7 +431,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
 
       {/* 互動熱點提示:走近供桌/蒲團時出現 */}
       {walkMode && hotspotHint ? (
-        <div className="pointer-events-none absolute bottom-36 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/70 px-5 py-2 text-sm text-ink backdrop-blur-md animate-fade-up">
+        <div className="pointer-events-none absolute bottom-36 left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/70 px-5 py-2 text-sm text-paper backdrop-blur-md animate-fade-up">
           按
           <kbd className="rounded border border-gold/50 bg-gold/15 px-2 py-0.5 font-mono text-xs text-gold-soft">E</kbd>
           {hotspotHint}
@@ -341,7 +442,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
       {liveNotice ? (
         <div
           role="status"
-          className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-5 py-2 text-sm text-ink backdrop-blur-md animate-fade-up"
+          className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 px-5 py-2 text-sm text-paper backdrop-blur-md animate-fade-up"
         >
           🕯 {liveNotice}
         </div>
@@ -470,7 +571,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         <div className="pointer-events-none absolute inset-x-0 top-[60%] z-10 flex justify-center">
           <p
             key={ritualHint}
-            className="flex items-center gap-2 rounded-full bg-black/40 px-4 py-1.5 text-sm tracking-wider text-ink/90 backdrop-blur-sm"
+            className="flex items-center gap-2 rounded-full bg-black/40 px-4 py-1.5 text-sm tracking-wider text-paper/90 backdrop-blur-sm"
             style={{ animation: "ritual-hint-fade 1.2s ease-out" }}
           >
             {ritualHint}
@@ -478,7 +579,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
               type="button"
               aria-label="關閉提示"
               onClick={() => setRitualHintDismissed(true)}
-              className="pointer-events-auto -mr-1 rounded-full px-1.5 text-ink/50 transition-colors hover:text-ink"
+              className="pointer-events-auto -mr-1 rounded-full px-1.5 text-paper/60 transition-colors hover:text-paper"
             >
               ✕
             </button>
@@ -496,7 +597,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
       <FloatingTributes tributes={recentTributes} />
 
       {/* 提示:操作說明 */}
-      <p className="pointer-events-none absolute bottom-2 right-3 z-10 text-[10px] text-ink/60">
+      <p className="pointer-events-none absolute bottom-2 right-3 z-10 text-[10px] text-paper/60">
         滑鼠左鍵拖曳:環視 ・ 滾輪:縮放
       </p>
 
@@ -519,12 +620,15 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
           gl.toneMappingExposure = 1.15;
         }}
       >
-        <color attach="background" args={["#eae2d2"]} />
-        <fog attach="fog" args={["#eae2d2", 10, 40]} />
+        <color attach="background" args={[styleDef.bg]} />
+        <fog attach="fog" args={[styleDef.bg, 10, 40]} />
 
-        {/* 明亮告別式場基調:高環境光 + 半球光,燭火只作暖色點綴 */}
-        <ambientLight intensity={0.62} color="#fff3de" />
-        <hemisphereLight args={["#fff6e6", "#9c8f7c", 0.55]} />
+        {/* 註:SoftShadows (PCSS) 與 N8AO 都會改寫 shader,和 three r184 不合
+            會讓整個 Canvas 全黑,已移除;後製只留最穩的 Bloom + Vignette。 */}
+
+        {/* 明亮告別式場基調:高環境光 + 半球光 (色溫由中式/西式風格決定) */}
+        <ambientLight intensity={styleDef.ambient.intensity} color={styleDef.ambient.color} />
+        <hemisphereLight args={[styleDef.hemi.sky, styleDef.hemi.ground, styleDef.hemi.intensity]} />
 
         {/* 中央壇前主光源:暖橘色,有閃爍 */}
         <FlickerLight position={[0, 3, 1.5]} color="#ffaa55" intensity={2.2} />
@@ -533,10 +637,16 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         {/* 遺照聚光燈:現實靈堂遺照永遠是最亮的視覺焦點 */}
         <PortraitSpot />
 
-        {/* 主場景 */}
-        <Hall />
-        <Backdrop />
-        <Couplets />
+        {/* 主場景 (PBR 貼圖非同步載入,Suspense 讓入場黑幕蓋過等待) */}
+        <React.Suspense fallback={null}>
+          <Hall floorTint={styleDef.floorTint} wallTint={styleDef.wallTint} />
+        </React.Suspense>
+        <Backdrop
+          curtainTint={styleDef.curtainTint}
+          pelmet={styleDef.pelmet}
+          showMedallion={styleDef.showMedallion}
+        />
+        {styleDef.showCouplets ? <Couplets /> : null}
         <FlowerBank />
         {/* 花圈立架:兩側各兩座,前後錯落、微向中央傾斜 */}
         <Wreath position={[-3.3, 0, -1.6]} rotationY={0.35} />
@@ -546,15 +656,15 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         {/* 高腳立燭 + 白燈籠 */}
         <TallCandle position={[-1.9, 0, -0.6]} />
         <TallCandle position={[1.9, 0, -0.6]} />
-        <Lantern position={[-3.2, 4.7, -1.2]} />
-        <Lantern position={[3.2, 4.7, -1.2]} />
+        <Lantern position={[-3.2, 4.7, -1.2]} color={styleDef.lanternColor} emissive={styleDef.lanternEmissive} />
+        <Lantern position={[3.2, 4.7, -1.2]} color={styleDef.lanternColor} emissive={styleDef.lanternEmissive} />
         <CarpetAndCushion />
         {/* 弔唁座位區(後段)+ 座位區的立燭/燈籠照明 */}
         <ChairRows />
         <TallCandle position={[-3.8, 0, 5.4]} />
         <TallCandle position={[3.8, 0, 5.4]} />
-        <Lantern position={[-3.2, 4.7, 7.2]} />
-        <Lantern position={[3.2, 4.7, 7.2]} />
+        <Lantern position={[-3.2, 4.7, 7.2]} color={styleDef.lanternColor} emissive={styleDef.lanternEmissive} />
+        <Lantern position={[3.2, 4.7, 7.2]} color={styleDef.lanternColor} emissive={styleDef.lanternEmissive} />
         <FlickerLight position={[0, 3.4, 5.6]} color="#ff9d4d" intensity={1.8} />
         <Altar incenseLit={incenseLit} />
         <Guide name={shortName(meta, tablet.tokenId)} />
@@ -595,6 +705,15 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
             onHotspot={setHotspotHint}
           />
         ) : null}
+
+        {/* ── Tier 1 後製:燭光光暈 + 暗角 ──────────────────────────────
+            Bloom 閾值 >1 → 只有火焰/燈籠這類 toneMapped=false 的高亮材質會
+            發光暈;Vignette 收束視線。multisampling=4 補回 composer 接管後
+            失效的 MSAA 抗鋸齒。 */}
+        <EffectComposer multisampling={4}>
+          <Bloom mipmapBlur intensity={0.55} luminanceThreshold={1.05} luminanceSmoothing={0.2} />
+          <Vignette eskil={false} offset={0.18} darkness={0.62} />
+        </EffectComposer>
       </Canvas>
       </WebGLGuard>
     </div>
@@ -607,33 +726,70 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
  * 大廳:石板地、後方石牆、左右側牆。
  * 空間往 +z(入口方向)延伸到 z=9,後段是弔唁座位區(ChairRows)。
  */
-function Hall(): React.ReactElement {
+function Hall({
+  floorTint,
+  wallTint,
+}: {
+  floorTint: string;
+  wallTint: string;
+}): React.ReactElement {
+  // Poly Haven 1K PBR 貼圖 (CC0,放 public/textures/hall/):
+  //   地板 = wood_floor_deck、牆面 = plastered_stone_wall。
+  // useTexture 會 suspend,由外層 Suspense 接住;入場黑幕蓋過載入瞬間。
+  const floorMaps = useTexture({
+    map: "/textures/hall/floor_diff_1k.jpg",
+    roughnessMap: "/textures/hall/floor_rough_1k.jpg",
+    normalMap: "/textures/hall/floor_nor_gl_1k.jpg",
+  });
+  const wallMaps = useTexture({
+    map: "/textures/hall/wall_diff_1k.jpg",
+    roughnessMap: "/textures/hall/wall_rough_1k.jpg",
+    normalMap: "/textures/hall/wall_nor_gl_1k.jpg",
+  });
+
+  // 平鋪設定只需做一次;同一組貼圖物件被多面共用 (repeat 相同即可)。
+  React.useMemo(() => {
+    for (const t of Object.values(floorMaps)) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(7, 9);
+      t.anisotropy = 8;
+    }
+    floorMaps.map.colorSpace = THREE.SRGBColorSpace;
+    for (const t of Object.values(wallMaps)) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(3.2, 2);
+      t.anisotropy = 8;
+    }
+    wallMaps.map.colorSpace = THREE.SRGBColorSpace;
+    return null;
+  }, [floorMaps, wallMaps]);
+
   return (
     <group>
-      {/* 地板:淺暖石面(真實告別式場的亮地板) */}
+      {/* 地板:實木地板貼圖 (色調微調亮以保留告別式場的明亮基調) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[20, 26]} />
-        <meshStandardMaterial color="#b7a992" roughness={0.85} />
+        <meshStandardMaterial {...floorMaps} color={floorTint} normalScale={new THREE.Vector2(0.6, 0.6)} />
       </mesh>
       {/* 後牆(遺照那面) */}
       <mesh position={[0, 3, -3]} receiveShadow>
         <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#e7ddcb" roughness={1} />
+        <meshStandardMaterial {...wallMaps} color={wallTint} normalScale={new THREE.Vector2(0.5, 0.5)} />
       </mesh>
       {/* 前牆(入口那面) */}
       <mesh position={[0, 3, 9]} rotation={[0, Math.PI, 0]} receiveShadow>
         <planeGeometry args={[10, 6]} />
-        <meshStandardMaterial color="#e3d9c6" roughness={1} />
+        <meshStandardMaterial {...wallMaps} color={wallTint} normalScale={new THREE.Vector2(0.5, 0.5)} />
       </mesh>
       {/* 左牆 */}
       <mesh position={[-5, 3, 3]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[12, 6]} />
-        <meshStandardMaterial color="#e5dbc8" roughness={1} />
+        <meshStandardMaterial {...wallMaps} color={wallTint} normalScale={new THREE.Vector2(0.5, 0.5)} />
       </mesh>
       {/* 右牆 */}
       <mesh position={[5, 3, 3]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[12, 6]} />
-        <meshStandardMaterial color="#e5dbc8" roughness={1} />
+        <meshStandardMaterial {...wallMaps} color={wallTint} normalScale={new THREE.Vector2(0.5, 0.5)} />
       </mesh>
       {/* 天花板 */}
       <mesh position={[0, 6, 3]} rotation={[Math.PI / 2, 0, 0]}>
@@ -649,18 +805,7 @@ function Hall(): React.ReactElement {
  * 椅子是純 primitive(座面+椅背+兩側板),整區靜態、零動畫成本。
  */
 function ChairRows(): React.ReactElement {
-  const rand = React.useMemo(() => mulberry32(20260716), []);
-  const chairs: Array<{ x: number; z: number; rot: number }> = React.useMemo(() => {
-    const list: Array<{ x: number; z: number; rot: number }> = [];
-    const rows = [3.7, 5.0, 6.3, 7.6];
-    const seats = [-3.1, -2.3, -1.5, 1.5, 2.3, 3.1]; // 中央走道 |x|<1.5 淨空
-    for (const z of rows) {
-      for (const x of seats) {
-        list.push({ x, z, rot: (rand() - 0.5) * 0.12 });
-      }
-    }
-    return list;
-  }, [rand]);
+  const chairs = getChairLayout();
 
   return (
     // 椅背在 +z(入口側),坐面朝 -z 面向供桌遺照
@@ -690,6 +835,114 @@ function ChairRows(): React.ReactElement {
       ))}
     </group>
   );
+}
+
+// ─── 座位佈局 + 走動碰撞 ────────────────────────────────────────────────
+// 椅子位置是種子隨機 (每次一致),抽成模組層快取讓三方共用:
+// ChairRows 畫椅子、SelfWalker 碰撞、坐下互動找最近的椅子。
+
+interface ChairSpot {
+  x: number;
+  z: number;
+  rot: number;
+}
+
+let chairLayoutCache: ChairSpot[] | null = null;
+function getChairLayout(): ChairSpot[] {
+  if (!chairLayoutCache) {
+    const rand = mulberry32(20260716);
+    const list: ChairSpot[] = [];
+    const rows = [3.7, 5.0, 6.3, 7.6];
+    const seats = [-3.1, -2.3, -1.5, 1.5, 2.3, 3.1]; // 中央走道 |x|<1.5 淨空
+    for (const z of rows) {
+      for (const x of seats) {
+        list.push({ x, z, rot: (rand() - 0.5) * 0.12 });
+      }
+    }
+    chairLayoutCache = list;
+  }
+  return chairLayoutCache;
+}
+
+/** 圓形碰撞體:走動時人物不可進入的家具範圍。 */
+interface CircleObstacle {
+  x: number;
+  z: number;
+  r: number;
+}
+
+let obstaclesCache: CircleObstacle[] | null = null;
+function getObstacles(): CircleObstacle[] {
+  if (!obstaclesCache) {
+    const list: CircleObstacle[] = [
+      // 供桌 (box 3×1.2 @ z=0.5):三顆圓涵蓋整張長桌
+      { x: -1.0, z: 0.5, r: 0.72 },
+      { x: 0, z: 0.5, r: 0.72 },
+      { x: 1.0, z: 0.5, r: 0.72 },
+      // 花山前緣 (擋住走進花堆)
+      { x: -1.8, z: -1.2, r: 1.0 },
+      { x: 0, z: -1.2, r: 1.0 },
+      { x: 1.8, z: -1.2, r: 1.0 },
+      // 高腳立燭 ×4
+      { x: -1.9, z: -0.6, r: 0.3 },
+      { x: 1.9, z: -0.6, r: 0.3 },
+      { x: -3.8, z: 5.4, r: 0.3 },
+      { x: 3.8, z: 5.4, r: 0.3 },
+      // 花圈立架 ×4
+      { x: -3.3, z: -1.6, r: 0.5 },
+      { x: -4.1, z: -0.5, r: 0.5 },
+      { x: 3.3, z: -1.6, r: 0.5 },
+      { x: 4.1, z: -0.5, r: 0.5 },
+    ];
+    for (const c of getChairLayout()) list.push({ x: c.x, z: c.z, r: 0.32 });
+    obstaclesCache = list;
+  }
+  return obstaclesCache;
+}
+
+const AVATAR_RADIUS = 0.22;
+
+/** (x,z) 是否撞進任何家具。 */
+function hitsObstacle(x: number, z: number): boolean {
+  for (const o of getObstacles()) {
+    const rr = o.r + AVATAR_RADIUS;
+    const dx = x - o.x;
+    const dz = z - o.z;
+    if (dx * dx + dz * dz < rr * rr) return true;
+  }
+  return false;
+}
+
+/**
+ * 碰撞安全網:若 (x,z) 已在任何家具圓內,沿徑向推到圓外。
+ * 逐軸滑行負責日常阻擋,這裡兜底處理「已經站在家具裡」的狀態
+ * (出生點、起身落點、多圓交疊的邊角),最多迭代 3 輪收斂。
+ */
+function resolveObstacles(x: number, z: number): { x: number; z: number } {
+  for (let iter = 0; iter < 3; iter++) {
+    let pushed = false;
+    for (const o of getObstacles()) {
+      const rr = o.r + AVATAR_RADIUS;
+      let dx = x - o.x;
+      let dz = z - o.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= rr * rr) continue;
+      const d = Math.sqrt(d2);
+      if (d < 1e-4) {
+        // 恰好站在圓心:往入口方向 (+z) 推出
+        dx = 0;
+        dz = 1;
+      } else {
+        dx /= d;
+        dz /= d;
+      }
+      x = o.x + dx * (rr + 0.01);
+      z = o.z + dz * (rr + 0.01);
+      pushed = true;
+    }
+    if (!pushed) break;
+  }
+  return { x, z };
 }
 
 // ─── 仿真靈堂陳設 ──────────────────────────────────────────────────────
@@ -747,8 +1000,16 @@ function PortraitSpot(): React.ReactElement {
   );
 }
 
-/** 後方白布幔 (打摺) + 中央「奠」字圓匾。 */
-function Backdrop(): React.ReactElement {
+/** 後方白布幔 (打摺) + 中央「奠」字圓匾 (中式才有;西式為素色布幔)。 */
+function Backdrop({
+  curtainTint,
+  pelmet,
+  showMedallion,
+}: {
+  curtainTint: string;
+  pelmet: string;
+  showMedallion: boolean;
+}): React.ReactElement {
   // 打摺:亮暗相間的縱向 sine 條紋,重複貼滿整幅布幔。
   const pleats = React.useMemo(() => {
     const tex = makeCanvasTexture(
@@ -799,21 +1060,23 @@ function Backdrop(): React.ReactElement {
 
   return (
     <group>
-      {/* 布幔本體 (蓋住整面後牆) */}
+      {/* 布幔本體 (蓋住整面後牆);tint 隨中式(暖白)/西式(冷白)切換 */}
       <mesh position={[0, 2.95, -2.96]}>
         <planeGeometry args={[9.8, 5.8]} />
-        <meshStandardMaterial map={pleats} roughness={0.92} />
+        <meshStandardMaterial map={pleats} color={curtainTint} roughness={0.92} />
       </mesh>
       {/* 布幔頂部深色簾頭 */}
       <mesh position={[0, 5.62, -2.94]}>
         <planeGeometry args={[9.8, 0.55]} />
-        <meshStandardMaterial color="#3c3630" roughness={0.9} />
+        <meshStandardMaterial color={pelmet} roughness={0.9} />
       </mesh>
-      {/* 奠字圓匾 (遺照正上方) */}
-      <mesh position={[0, 5.02, -2.9]}>
-        <planeGeometry args={[1.05, 1.05]} />
-        <meshStandardMaterial map={medallion} transparent alphaTest={0.05} roughness={0.8} />
-      </mesh>
+      {/* 奠字圓匾 (遺照正上方,中式限定) */}
+      {showMedallion ? (
+        <mesh position={[0, 5.02, -2.9]}>
+          <planeGeometry args={[1.05, 1.05]} />
+          <meshStandardMaterial map={medallion} transparent alphaTest={0.05} roughness={0.8} />
+        </mesh>
+      ) : null}
     </group>
   );
 }
@@ -1023,7 +1286,15 @@ function TallCandle({ position }: { position: [number, number, number] }): React
 }
 
 /** 白燈籠:懸在兩側上方,微微發光。 */
-function Lantern({ position }: { position: [number, number, number] }): React.ReactElement {
+function Lantern({
+  position,
+  color = "#f3ead6",
+  emissive = "#ffefcf",
+}: {
+  position: [number, number, number];
+  color?: string;
+  emissive?: string;
+}): React.ReactElement {
   return (
     <group position={position}>
       {/* 吊繩 */}
@@ -1031,12 +1302,12 @@ function Lantern({ position }: { position: [number, number, number] }): React.Re
         <cylinderGeometry args={[0.012, 0.012, 0.9, 6]} />
         <meshStandardMaterial color="#211b14" />
       </mesh>
-      {/* 燈籠本體 */}
+      {/* 燈籠本體 (色調隨中式/西式風格) */}
       <mesh scale={[1, 1.18, 1]}>
         <sphereGeometry args={[0.34, 20, 16]} />
         <meshStandardMaterial
-          color="#f3ead6"
-          emissive="#ffefcf"
+          color={color}
+          emissive={emissive}
           emissiveIntensity={0.4}
           roughness={0.8}
         />
@@ -1343,63 +1614,105 @@ function FloatingPhoto({
 }
 
 /** 香爐上方的煙霧粒子 */
-function IncenseSmoke(): React.ReactElement {
-  const ref = React.useRef<THREE.Points | null>(null);
-  const COUNT = 60;
+/** 柔邊煙霧貼圖:radial gradient 畫進 canvas,零外部 asset。整個 app 共用一份。 */
+let smokeTexture: THREE.CanvasTexture | null = null;
+function getSmokeTexture(): THREE.CanvasTexture | null {
+  if (smokeTexture) return smokeTexture;
+  if (typeof document === "undefined") return null;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, "rgba(255,255,255,0.55)");
+  g.addColorStop(0.4, "rgba(255,255,255,0.22)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  smokeTexture = new THREE.CanvasTexture(canvas);
+  return smokeTexture;
+}
 
-  // 初始化粒子位置 + 速度
-  const { positions, velocities } = React.useMemo(() => {
-    const positions = new Float32Array(COUNT * 3);
-    const velocities = new Float32Array(COUNT * 3);
+interface SmokePuff {
+  sprite: THREE.Sprite;
+  /** 0..1 生命週期進度;每個 puff 相位錯開 */
+  t: number;
+  speed: number;
+  drift: number;
+  phase: number;
+}
+
+/**
+ * 香煙 (Tier 1 升級版):billboard 柔邊煙片取代圓點粒子。
+ * 每片煙從香頭升起 → 邊上升邊放大、旋轉、淡出 → 回到香頭循環。
+ * 12 片 sprite,GPU 開銷極低;柔邊 gradient 讓煙有真實的體積感。
+ */
+function IncenseSmoke(): React.ReactElement | null {
+  const groupRef = React.useRef<THREE.Group | null>(null);
+  const puffsRef = React.useRef<SmokePuff[]>([]);
+  const texture = React.useMemo(() => getSmokeTexture(), []);
+
+  const COUNT = 12;
+  const ORIGIN = { x: 0, y: 1.5, z: 0.7 }; // 香爐上方
+  const LIFE_HEIGHT = 2.6; // 上升總高度
+
+  // 建 sprite 一次;卸載時清掉
+  React.useEffect(() => {
+    const group = groupRef.current;
+    if (!group || !texture) return;
+    const puffs: SmokePuff[] = [];
     for (let i = 0; i < COUNT; i++) {
-      positions[i * 3 + 0] = (Math.random() - 0.5) * 0.15;
-      positions[i * 3 + 1] = 1.55 + Math.random() * 0.5;
-      positions[i * 3 + 2] = 0.7 + (Math.random() - 0.5) * 0.15;
-      velocities[i * 3 + 0] = (Math.random() - 0.5) * 0.005;
-      velocities[i * 3 + 1] = 0.005 + Math.random() * 0.01;
-      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.005;
+      const mat = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0,
+        color: new THREE.Color("#e8e4dc"),
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.set(ORIGIN.x, ORIGIN.y, ORIGIN.z);
+      group.add(sprite);
+      puffs.push({
+        sprite,
+        t: i / COUNT, // 相位均勻錯開 → 連續煙柱
+        speed: 0.10 + Math.random() * 0.05,
+        drift: (Math.random() - 0.5) * 0.5,
+        phase: Math.random() * Math.PI * 2,
+      });
     }
-    return { positions, velocities };
-  }, []);
-
-  useFrame(() => {
-    if (!ref.current) return;
-    const geo = ref.current.geometry as THREE.BufferGeometry;
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const arr = pos.array as Float32Array;
-    for (let i = 0; i < COUNT; i++) {
-      const ix = i * 3;
-      arr[ix + 0] = (arr[ix + 0] ?? 0) + (velocities[ix + 0] ?? 0);
-      arr[ix + 1] = (arr[ix + 1] ?? 0) + (velocities[ix + 1] ?? 0);
-      arr[ix + 2] = (arr[ix + 2] ?? 0) + (velocities[ix + 2] ?? 0);
-      // 飄到一定高度就 reset 回香爐
-      if ((arr[ix + 1] ?? 0) > 4) {
-        arr[ix + 0] = (Math.random() - 0.5) * 0.15;
-        arr[ix + 1] = 1.55;
-        arr[ix + 2] = 0.7 + (Math.random() - 0.5) * 0.15;
+    puffsRef.current = puffs;
+    return () => {
+      for (const p of puffs) {
+        group.remove(p.sprite);
+        p.sprite.material.dispose();
       }
+      puffsRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [texture]);
+
+  useFrame((state, delta) => {
+    const time = state.clock.elapsedTime;
+    for (const p of puffsRef.current) {
+      p.t += delta * p.speed;
+      if (p.t > 1) p.t -= 1;
+      const y = ORIGIN.y + p.t * LIFE_HEIGHT;
+      // 上升時側向擺動 (sin 疊加慢速漂移),模擬熱氣流
+      const sway = Math.sin(time * 0.8 + p.phase + p.t * 4) * 0.12 * p.t;
+      p.sprite.position.set(ORIGIN.x + sway + p.drift * p.t, y, ORIGIN.z + sway * 0.5);
+      // 由小變大 (0.12 → 0.75)
+      const scale = 0.12 + p.t * 0.63;
+      p.sprite.scale.set(scale, scale, 1);
+      // 透明度:快進快出的鐘形曲線
+      const fade = Math.sin(Math.min(p.t, 1) * Math.PI);
+      p.sprite.material.opacity = fade * 0.4;
+      p.sprite.material.rotation = p.phase + p.t * 1.2;
     }
-    pos.needsUpdate = true;
   });
 
-  return (
-    <points ref={ref}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          args={[positions, 3]}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.08}
-        color="#cccccc"
-        transparent
-        opacity={0.25}
-        depthWrite={false}
-        sizeAttenuation
-      />
-    </points>
-  );
+  if (!texture) return null;
+  return <group ref={groupRef} />;
 }
 
 // ─── 留言板 Overlay ────────────────────────────────────────────────────
@@ -1640,7 +1953,7 @@ function Guide({ name }: { name: string }): React.ReactElement | null {
       {/* 對白氣泡 */}
       {(phase === "visible" || phase === "appearing") && (
         <Html position={[0, 2.4, 0]} center distanceFactor={6} style={{ pointerEvents: "none" }}>
-          <div className="whitespace-nowrap rounded-lg border border-ink/30 bg-black/70 px-4 py-2 text-sm text-ink backdrop-blur-sm">
+          <div className="whitespace-nowrap rounded-lg border border-paper/25 bg-black/70 px-4 py-2 text-sm text-paper backdrop-blur-sm">
             請靜下心,{name} 一直在等您。
           </div>
         </Html>
@@ -1704,7 +2017,7 @@ function Xiaojing(): React.ReactElement | null {
       </mesh>
       {(phase === "visible" || phase === "appearing") && (
         <Html position={[0, 2.2, 0]} center distanceFactor={6} style={{ pointerEvents: "none" }}>
-          <div className="whitespace-nowrap rounded-lg border border-ink/30 bg-black/75 px-4 py-2 text-sm text-ink backdrop-blur-sm">
+          <div className="whitespace-nowrap rounded-lg border border-paper/25 bg-black/75 px-4 py-2 text-sm text-paper backdrop-blur-sm">
             <p className="text-[10px] uppercase tracking-wider" style={{ color: "#e8b89a" }}>家屬・小靜</p>
             <p>謝謝你趕過來,他一直等著你。</p>
           </div>
@@ -1740,14 +2053,14 @@ function FloatingTributes({ tributes }: { tributes: Tribute[] }): React.ReactEle
           return (
             <div
               key={t.id}
-              className={`absolute ${horizontal} max-w-[18%] rounded-md border border-ink/15 bg-black/30 px-3 py-2 text-ink/85 backdrop-blur-sm`}
+              className={`absolute ${horizontal} max-w-[18%] rounded-md border border-paper/20 bg-black/30 px-3 py-2 text-paper/85 backdrop-blur-sm`}
               style={{
                 top: `${top}%`,
                 animation: `tribute-float 16s ease-in-out ${delay}s infinite`,
               }}
             >
               <p className="line-clamp-3 font-serif text-xs leading-relaxed">「{t.message}」</p>
-              <p className="mt-1 text-[10px] text-ink/50">
+              <p className="mt-1 text-[10px] text-paper/60">
                 — {t.fromName || (t.fromAddress ? t.fromAddress.slice(0, 6) + "..." + t.fromAddress.slice(-4) : "匿名")}
               </p>
             </div>
@@ -1843,7 +2156,7 @@ function NameTag({ name }: { name: string }): React.ReactElement {
     [name],
   );
   return (
-    <Billboard position={[0, 1.5, 0]}>
+    <Billboard position={[0, 1.68, 0]}>
       <mesh>
         <planeGeometry args={[0.9, 0.28]} />
         <meshBasicMaterial map={texture} transparent depthWrite={false} />
@@ -1870,26 +2183,188 @@ function ChatBubble({ text }: { text: string }): React.ReactElement {
 }
 
 /** 化身外觀:袍狀錐體 + 頭 + 暖光,像一盞緩緩漂浮的紙燈籠 */
-function LanternFigure({ name, self = false }: { name: string; self?: boolean }): React.ReactElement {
+// ─── 弔唁者小人 ────────────────────────────────────────────────────────
+// 取代舊的圓錐燈籠靈體:程序化人形 (頭/髮/軀幹/四肢),素色正裝配色由名字
+// 決定 (同一人永遠同色)。走動時腿臂交叉擺動 (速度由自身世界座標推得,
+// 不用改 SelfWalker/PeerFigure 的移動邏輯),站定時垂手微擺。零外部模型。
+
+/** 腳下接觸陰影貼圖 (深色 radial gradient),全 app 共用一份。 */
+let blobShadowTexture: THREE.CanvasTexture | null = null;
+function getBlobShadowTexture(): THREE.CanvasTexture | null {
+  if (blobShadowTexture) return blobShadowTexture;
+  if (typeof document === "undefined") return null;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, "rgba(20,16,12,0.55)");
+  g.addColorStop(0.6, "rgba(20,16,12,0.25)");
+  g.addColorStop(1, "rgba(20,16,12,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  blobShadowTexture = new THREE.CanvasTexture(canvas);
+  return blobShadowTexture;
+}
+
+/** 名字 → 穩定的正裝配色 (深色系西裝 + 膚色 + 髮色)。 */
+function attendeePalette(seedStr: string): { suit: string; sleeve: string; skin: string; hair: string } {
+  let h = 0;
+  for (let i = 0; i < seedStr.length; i++) h = (h * 31 + seedStr.charCodeAt(i)) >>> 0;
+  const suits = ["#2e3542", "#3a3130", "#33402f", "#403340", "#2f3c45", "#3d3a2e"];
+  const skins = ["#e8c39a", "#d9a97f", "#f0d0ae", "#c9976b"];
+  const hairs = ["#26211d", "#3a2f26", "#1d1d22", "#4a4038"];
+  const suit = suits[h % suits.length]!;
+  return {
+    suit,
+    sleeve: new THREE.Color(suit).multiplyScalar(0.85).getStyle(),
+    skin: skins[(h >> 3) % skins.length]!,
+    hair: hairs[(h >> 6) % hairs.length]!,
+  };
+}
+
+/** 外部 (SelfWalker / PeerFigure) 每幀寫入的姿勢:鞠躬角度 + 是否入座。 */
+export interface AttendeePose {
+  /** 上半身前傾角 (rad);0 = 直立 */
+  bow: number;
+  seated: boolean;
+}
+
+function AttendeeFigure({
+  name,
+  self = false,
+  poseRef,
+}: {
+  name: string;
+  self?: boolean;
+  poseRef?: React.MutableRefObject<AttendeePose>;
+}): React.ReactElement {
+  const rootRef = React.useRef<THREE.Group>(null);
+  const upperRef = React.useRef<THREE.Group>(null);
+  const legLRef = React.useRef<THREE.Group>(null);
+  const legRRef = React.useRef<THREE.Group>(null);
+  const armLRef = React.useRef<THREE.Group>(null);
+  const armRRef = React.useRef<THREE.Group>(null);
+  const prevPos = React.useRef<THREE.Vector3 | null>(null);
+  const phaseRef = React.useRef(Math.random() * Math.PI * 2);
+  const ampRef = React.useRef(0);
+  const seatBlendRef = React.useRef(0); // 0=站 1=坐,平滑過渡
+
+  const palette = React.useMemo(() => attendeePalette(name + (self ? "#self" : "")), [name, self]);
+  const shadowTex = React.useMemo(() => getBlobShadowTexture(), []);
+
+  // 走路動畫:由自身世界座標的位移推速度 → 擺動幅度/頻率。
+  // 鞠躬只彎上半身 (腰部樞紐),坐下時大腿前伸 — 姿勢由 poseRef 每幀驅動。
+  useFrame((state, rawDt) => {
+    const dt = Math.min(rawDt, 0.1);
+    const root = rootRef.current;
+    if (!root || dt <= 0) return;
+    const world = root.getWorldPosition(new THREE.Vector3());
+    let speed = 0;
+    if (prevPos.current) {
+      const dx = world.x - prevPos.current.x;
+      const dz = world.z - prevPos.current.z;
+      speed = Math.hypot(dx, dz) / dt;
+    }
+    prevPos.current = world;
+
+    const pose = poseRef?.current;
+    const seatTarget = pose?.seated ? 1 : 0;
+    seatBlendRef.current += (seatTarget - seatBlendRef.current) * Math.min(1, dt * 9);
+    const seat = seatBlendRef.current;
+
+    // 目標擺幅:速度滿檔 ~0.55rad;停下來就收斂回 0
+    const targetAmp = Math.min(1, speed / 2.2) * 0.55;
+    ampRef.current += (targetAmp - ampRef.current) * Math.min(1, dt * 8);
+    phaseRef.current += dt * (4 + speed * 3.2);
+
+    const swing = Math.sin(phaseRef.current) * ampRef.current * (1 - seat);
+    // 站定時的細微垂手擺動 (呼吸感)
+    const idle = Math.sin(state.clock.elapsedTime * 1.6 + phaseRef.current * 0.01) * 0.045;
+
+    // 坐姿:大腿前伸 (-1.3rad),手放腿上 (-0.4rad)
+    if (legLRef.current) legLRef.current.rotation.x = swing + -1.3 * seat;
+    if (legRRef.current) legRRef.current.rotation.x = -swing + -1.3 * seat;
+    if (armLRef.current) armLRef.current.rotation.x = (-swing * 0.7 + idle) * (1 - seat) + -0.4 * seat;
+    if (armRRef.current) armRRef.current.rotation.x = (swing * 0.7 - idle) * (1 - seat) + -0.4 * seat;
+
+    // 鞠躬:只有上半身在腰部前傾 (而不是整個人以腳為軸倒下去)
+    if (upperRef.current) upperRef.current.rotation.x = pose?.bow ?? 0;
+  });
+
   return (
-    <group>
-      <mesh position={[0, 0.52, 0]} castShadow>
-        <coneGeometry args={[0.3, 0.9, 20]} />
-        <meshStandardMaterial
-          color="#efe0bd"
-          emissive="#c9a45e"
-          emissiveIntensity={self ? 0.45 : 0.3}
-          transparent
-          opacity={0.92}
-          roughness={0.6}
-        />
-      </mesh>
-      <mesh position={[0, 1.12, 0]} castShadow>
-        <sphereGeometry args={[0.13, 20, 20]} />
-        <meshStandardMaterial color="#f2e6c8" emissive="#d8b877" emissiveIntensity={0.35} roughness={0.5} />
-      </mesh>
+    <group ref={rootRef}>
+      {/* 腳下接觸陰影 */}
+      {shadowTex ? (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+          <planeGeometry args={[0.72, 0.72]} />
+          <meshBasicMaterial map={shadowTex} transparent depthWrite={false} />
+        </mesh>
+      ) : null}
+
+      {/* 左右腿 (髖部樞紐,深色西裝褲) */}
+      <group ref={legLRef} position={[-0.085, 0.5, 0]}>
+        <mesh position={[0, -0.25, 0]} castShadow>
+          <capsuleGeometry args={[0.062, 0.32, 6, 12]} />
+          <meshStandardMaterial color={palette.sleeve} roughness={0.85} />
+        </mesh>
+      </group>
+      <group ref={legRRef} position={[0.085, 0.5, 0]}>
+        <mesh position={[0, -0.25, 0]} castShadow>
+          <capsuleGeometry args={[0.062, 0.32, 6, 12]} />
+          <meshStandardMaterial color={palette.sleeve} roughness={0.85} />
+        </mesh>
+      </group>
+
+      {/* 上半身 (腰部樞紐 y=0.5):軀幹 / 領口 / 雙臂 / 頭髮 — 鞠躬時整組前傾 */}
+      <group ref={upperRef} position={[0, 0.5, 0]}>
+        {/* 軀幹 (西裝) */}
+        <mesh position={[0, 0.34, 0]} castShadow>
+          <capsuleGeometry args={[0.155, 0.42, 8, 16]} />
+          <meshStandardMaterial color={palette.suit} roughness={0.8} />
+        </mesh>
+        {/* 白襯衫領口 */}
+        <mesh position={[0, 0.53, 0.128]} rotation={[0.28, 0, 0]}>
+          <planeGeometry args={[0.09, 0.12]} />
+          <meshStandardMaterial color="#f2f0ea" roughness={0.7} side={THREE.DoubleSide} />
+        </mesh>
+
+        {/* 左右臂 (肩部樞紐,袖色略深) + 手 */}
+        <group ref={armLRef} position={[-0.215, 0.55, 0]} rotation={[0, 0, 0.1]}>
+          <mesh position={[0, -0.18, 0]} castShadow>
+            <capsuleGeometry args={[0.048, 0.28, 6, 10]} />
+            <meshStandardMaterial color={palette.sleeve} roughness={0.85} />
+          </mesh>
+          <mesh position={[0, -0.36, 0]}>
+            <sphereGeometry args={[0.046, 10, 10]} />
+            <meshStandardMaterial color={palette.skin} roughness={0.6} />
+          </mesh>
+        </group>
+        <group ref={armRRef} position={[0.215, 0.55, 0]} rotation={[0, 0, -0.1]}>
+          <mesh position={[0, -0.18, 0]} castShadow>
+            <capsuleGeometry args={[0.048, 0.28, 6, 10]} />
+            <meshStandardMaterial color={palette.sleeve} roughness={0.85} />
+          </mesh>
+          <mesh position={[0, -0.36, 0]}>
+            <sphereGeometry args={[0.046, 10, 10]} />
+            <meshStandardMaterial color={palette.skin} roughness={0.6} />
+          </mesh>
+        </group>
+
+        {/* 頭 + 髮 */}
+        <mesh position={[0, 0.83, 0]} castShadow>
+          <sphereGeometry args={[0.125, 20, 20]} />
+          <meshStandardMaterial color={palette.skin} roughness={0.55} />
+        </mesh>
+        <mesh position={[0, 0.895, -0.022]} scale={[1, 0.74, 1]}>
+          <sphereGeometry args={[0.128, 20, 20]} />
+          <meshStandardMaterial color={palette.hair} roughness={0.9} />
+        </mesh>
+      </group>
+
       {/* 只有自己的身影帶一盞小光,避免多人時光源爆量 */}
-      {self ? <pointLight position={[0, 1, 0]} intensity={0.55} distance={2.6} color="#ffd9a0" /> : null}
+      {self ? <pointLight position={[0, 1.1, 0]} intensity={0.5} distance={2.6} color="#ffd9a0" /> : null}
       <NameTag name={name} />
     </group>
   );
@@ -1917,12 +2392,9 @@ const HOTSPOTS = [
   { id: "bow", x: 0, z: 2.1, radius: 1.0, label: "獻上三鞠躬" },
 ] as const;
 
-const JUMP_VELOCITY = 3.4;
-const GRAVITY = 9.8;
-
 /**
- * 自己的化身:WASD/方向鍵移動、空白鍵跳躍、E 與場景互動、
- * 第三人稱跟隨(OrbitControls 目標鎖住化身)。
+ * 自己的化身:WASD/方向鍵移動、E 與場景互動(上香/鞠躬/坐下)、
+ * 第三人稱跟隨(OrbitControls 目標鎖住化身)。靈堂屬肅穆場合,不提供跳躍。
  */
 function SelfWalker({
   controlsRef,
@@ -1940,10 +2412,10 @@ function SelfWalker({
   const ryRef = React.useRef(Math.PI); // 出生面向供桌
   const keysRef = React.useRef<Set<string>>(new Set());
   const bowStartRef = React.useRef<number | null>(null);
-  const bobPhase = React.useMemo(() => Math.random() * Math.PI * 2, []);
-  // 跳躍狀態(py = 離地高度)
-  const pyRef = React.useRef(0);
-  const vyRef = React.useRef(0);
+  // 姿勢 (鞠躬彎腰 / 坐姿) 每幀寫進 poseRef,AttendeeFigure 讀取套用
+  const poseRef = React.useRef<AttendeePose>({ bow: 0, seated: false });
+  // 目前坐著的椅子 (null = 站立)
+  const seatRef = React.useRef<ChairSpot | null>(null);
   // E 鍵當下能觸發的動作(useFrame 每幀依距離更新)
   const interactRef = React.useRef<(() => void) | null>(null);
   const hotspotLabelRef = React.useRef<string | null>(null);
@@ -1962,8 +2434,7 @@ function SelfWalker({
         return;
       }
       if (k === " ") {
-        e.preventDefault(); // 避免捲動頁面 / 誤觸 focus 中的按鈕
-        if (pyRef.current <= 0.001 && vyRef.current === 0) vyRef.current = JUMP_VELOCITY;
+        e.preventDefault(); // 空白鍵不做事,但要擋掉頁面捲動 / 誤觸 focus 中的按鈕
         return;
       }
       if (k === "e") {
@@ -2000,6 +2471,31 @@ function SelfWalker({
     bowStartRef.current = bowing ? performance.now() : null;
   }, [bowing]);
 
+  // 坐下:吸附到椅面、面向供桌;起身:往椅子前方站開一步
+  const sitDown = React.useCallback(
+    (chair: ChairSpot): void => {
+      const p = posRef.current;
+      seatRef.current = chair;
+      poseRef.current.seated = true;
+      p.x = chair.x;
+      p.z = chair.z;
+      ryRef.current = Math.PI + chair.rot; // 椅子朝 -z (供桌方向)
+      sendPos(p.x, 0, p.z, ryRef.current, name);
+    },
+    [sendPos, name],
+  );
+  const standUp = React.useCallback((): void => {
+    const chair = seatRef.current;
+    if (!chair) return;
+    seatRef.current = null;
+    poseRef.current.seated = false;
+    const p = posRef.current;
+    // 往面向方向 (供桌側) 站開,避開椅子自身的碰撞半徑
+    p.x = chair.x + Math.sin(ryRef.current) * 0.65;
+    p.z = chair.z + Math.cos(ryRef.current) * 0.65;
+    sendPos(p.x, 0, p.z, ryRef.current, name);
+  }, [sendPos, name]);
+
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.1);
     const g = groupRef.current;
@@ -2010,8 +2506,11 @@ function SelfWalker({
     const fwdIn = (k.has("w") || k.has("arrowup") ? 1 : 0) - (k.has("s") || k.has("arrowdown") ? 1 : 0);
     const rightIn = (k.has("d") || k.has("arrowright") ? 1 : 0) - (k.has("a") || k.has("arrowleft") ? 1 : 0);
 
+    // 坐著時按移動鍵 → 自動起身 (本幀先站起,下一幀開始走)
+    if (seatRef.current && (fwdIn !== 0 || rightIn !== 0)) standUp();
+
     let moved = false;
-    if (fwdIn !== 0 || rightIn !== 0) {
+    if (!seatRef.current && (fwdIn !== 0 || rightIn !== 0)) {
       // 以鏡頭方位為準的移動方向(W = 朝畫面深處)
       const fwd = new THREE.Vector3();
       state.camera.getWorldDirection(fwd);
@@ -2021,43 +2520,66 @@ function SelfWalker({
       const dir = fwd.multiplyScalar(fwdIn).add(right.multiplyScalar(rightIn));
       if (dir.lengthSq() > 0) {
         dir.normalize();
-        p.x = Math.min(WALK_BOUNDS.maxX, Math.max(WALK_BOUNDS.minX, p.x + dir.x * WALK_SPEED * dt));
-        p.z = Math.min(WALK_BOUNDS.maxZ, Math.max(WALK_BOUNDS.minZ, p.z + dir.z * WALK_SPEED * dt));
+        // 逐軸移動 + 家具碰撞:撞到就取消該軸位移 (沿著障礙物滑行,不硬卡住)
+        const nx = Math.min(WALK_BOUNDS.maxX, Math.max(WALK_BOUNDS.minX, p.x + dir.x * WALK_SPEED * dt));
+        const nz = Math.min(WALK_BOUNDS.maxZ, Math.max(WALK_BOUNDS.minZ, p.z + dir.z * WALK_SPEED * dt));
+        const prevX = p.x;
+        const prevZ = p.z;
+        if (!hitsObstacle(nx, p.z)) p.x = nx;
+        if (!hitsObstacle(p.x, nz)) p.z = nz;
+        moved = p.x !== prevX || p.z !== prevZ;
         ryRef.current = angleLerp(ryRef.current, Math.atan2(dir.x, dir.z), Math.min(1, dt * 10));
+      }
+    }
+
+    // 安全網:不管位置怎麼來的 (出生點、起身、逐軸滑行的邊角案例),
+    // 只要站著就強制推出所有家具圓,保證永遠不會站在家具裡面
+    if (!seatRef.current) {
+      const fixed = resolveObstacles(p.x, p.z);
+      if (fixed.x !== p.x || fixed.z !== p.z) {
+        p.x = fixed.x;
+        p.z = fixed.z;
         moved = true;
       }
     }
 
-    // 跳躍物理:簡單重力積分,落地歸零
-    const airborne = pyRef.current > 0 || vyRef.current !== 0;
-    if (airborne) {
-      vyRef.current -= GRAVITY * dt;
-      pyRef.current = Math.max(0, pyRef.current + vyRef.current * dt);
-      if (pyRef.current === 0 && vyRef.current < 0) vyRef.current = 0;
-    }
-
-    // 身影位置 + 漂浮 + 行禮
-    // YXZ:先轉向再俯仰,行禮才會朝自己面向的方向俯身(預設 XYZ 面向 -z 時會後仰)
-    if (g.rotation.order !== "YXZ") g.rotation.order = "YXZ";
-    const bob = Math.sin(state.clock.elapsedTime * 1.7 + bobPhase) * 0.04;
-    g.position.set(p.x, bob + pyRef.current, p.z);
+    // 身影位置:人形雙腳落地,不再有燈籠靈體時代的上下漂浮。
+    // 坐姿高度:人物髖部樞紐在自身 y=0.5,椅面頂在 y=0.48,
+    // 所以只需微抬 0.05 讓大腿貼在椅面上 (抬 0.42 會整個人飛到椅背上空)
+    const seated = seatRef.current !== null;
+    g.position.set(p.x, seated ? 0.05 : 0, p.z);
     g.rotation.y = ryRef.current;
+    // 行禮:寫進 poseRef 讓 AttendeeFigure 只彎上半身 (腰部樞紐),
+    // ×1.8 加深到 ~50°,看起來才像真的鞠躬而不是點頭
     if (bowStartRef.current !== null) {
       const progress = (performance.now() - bowStartRef.current) / 3600; // 與鏡頭三鞠躬同長
-      g.rotation.x = bowAngle(progress);
+      poseRef.current.bow = bowAngle(progress) * 1.8;
     } else {
-      g.rotation.x *= Math.max(0, 1 - dt * 8);
+      poseRef.current.bow *= Math.max(0, 1 - dt * 8);
     }
 
     // 互動熱點:找最近且在半徑內的,更新「按 E ○○」提示與觸發動作
     let nearest: { label: string; action: () => void } | null = null;
     let nearestDist = Infinity;
-    for (const h of HOTSPOTS) {
-      if (h.id === "incense" && incenseLit) continue; // 已上過香就不再提示
-      const d = Math.hypot(p.x - h.x, p.z - h.z);
-      if (d <= h.radius && d < nearestDist) {
-        nearestDist = d;
-        nearest = { label: h.label, action: h.id === "incense" ? onIncense : onBow };
+    if (seated) {
+      // 坐著時 E = 起身
+      nearest = { label: "起身", action: standUp };
+    } else {
+      for (const h of HOTSPOTS) {
+        if (h.id === "incense" && incenseLit) continue; // 已上過香就不再提示
+        const d = Math.hypot(p.x - h.x, p.z - h.z);
+        if (d <= h.radius && d < nearestDist) {
+          nearestDist = d;
+          nearest = { label: h.label, action: h.id === "incense" ? onIncense : onBow };
+        }
+      }
+      // 最近的空椅:走近就能坐下
+      for (const c of getChairLayout()) {
+        const d = Math.hypot(p.x - c.x, p.z - c.z);
+        if (d <= 0.9 && d < nearestDist) {
+          nearestDist = d;
+          nearest = { label: "坐下", action: () => sitDown(c) };
+        }
       }
     }
     interactRef.current = nearest?.action ?? null;
@@ -2080,14 +2602,14 @@ function SelfWalker({
         ctrl.update();
       }
     }
-    if (moved || airborne) {
-      sendPos(p.x, pyRef.current, p.z, ryRef.current, name); // hook 內建 10Hz 節流
+    if (moved) {
+      sendPos(p.x, 0, p.z, ryRef.current, name); // hook 內建 10Hz 節流
     }
   });
 
   return (
     <group ref={groupRef}>
-      <LanternFigure name={name} self />
+      <AttendeeFigure name={name} self poseRef={poseRef} />
       {bubble ? <ChatBubble text={bubble} /> : null}
     </group>
   );
@@ -2096,35 +2618,31 @@ function SelfWalker({
 /** 單一其他訪客的身影:向網路目標值內插移動,收到 ritual 時行禮 */
 function PeerFigure({ peer, bubble }: { peer: PeerState; bubble: string | null }): React.ReactElement {
   const groupRef = React.useRef<THREE.Group>(null);
-  const bobPhase = React.useMemo(
-    () => (peer.id.charCodeAt(0) * 131 % 628) / 100,
-    [peer.id],
-  );
+  const poseRef = React.useRef<AttendeePose>({ bow: 0, seated: false });
 
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.1);
     const g = groupRef.current;
     if (!g) return;
-    if (g.rotation.order !== "YXZ") g.rotation.order = "YXZ"; // 行禮朝面向方向俯身
     const t = Math.min(1, dt * 8);
     peer.cx += (peer.x - peer.cx) * t;
-    peer.cy += (peer.y - peer.cy) * Math.min(1, dt * 12); // 跳躍垂直內插快一點才有彈性
+    peer.cy += (peer.y - peer.cy) * Math.min(1, dt * 12); // 舊版協定可能還帶 y,內插歸零即可
     peer.cz += (peer.z - peer.cz) * t;
     peer.cry = angleLerp(peer.cry, peer.ry, t);
-    const bob = Math.sin(state.clock.elapsedTime * 1.7 + bobPhase) * 0.04;
-    g.position.set(peer.cx, bob + peer.cy, peer.cz);
+    g.position.set(peer.cx, peer.cy, peer.cz);
     g.rotation.y = peer.cry;
+    // 行禮寫進 poseRef → AttendeeFigure 只彎上半身 (與自己的化身同一套)
     const bowRemain = peer.bowUntil - Date.now();
     if (bowRemain > 0) {
-      g.rotation.x = bowAngle(1 - bowRemain / 2_600);
+      poseRef.current.bow = bowAngle(1 - bowRemain / 2_600) * 1.8;
     } else {
-      g.rotation.x *= Math.max(0, 1 - dt * 8);
+      poseRef.current.bow *= Math.max(0, 1 - dt * 8);
     }
   });
 
   return (
     <group ref={groupRef} position={[peer.cx, 0, peer.cz]}>
-      <LanternFigure name={peer.name || "訪客"} />
+      <AttendeeFigure name={peer.name || "訪客"} poseRef={poseRef} />
       {bubble ? <ChatBubble text={bubble} /> : null}
     </group>
   );

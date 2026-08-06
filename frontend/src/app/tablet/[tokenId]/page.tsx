@@ -30,6 +30,7 @@ import {
   ImageIcon,
   Pencil,
   Save,
+  Settings2,
   X,
   Plus,
   Trash2,
@@ -52,15 +53,10 @@ import {
   type UploadedAsset,
 } from "@/lib/api";
 import { useSetTokenURI, useSiweLogin, useWaitForReceipt } from "@/lib/wallet";
-import { buildAndSaveTabletMetadata, type TabletSaveStage } from "@/lib/tablet-save";
-import { MEMORIAL_THEMES, getTheme, DEFAULT_THEME } from "@/lib/memorial-themes";
+import { buildAndSaveTabletMetadata } from "@/lib/tablet-save";
 import { displayName, formatDate, ipfsToHttps, shortName, truncateAddress } from "@/lib/utils";
 import { useError } from "@/components/ErrorDialog";
-import type {
-  ChatLogEntry,
-  MemorialTheme,
-  TabletMetadata,
-} from "@shared/types/tablet";
+import type { ChatLogEntry, TabletMetadata } from "@shared/types/tablet";
 
 /** 一列子孫快照的編輯狀態 (預填現有,送出時保留 tokenId/wallet)。 */
 interface DraftDescendant {
@@ -429,11 +425,20 @@ export default function TabletDetailPage(): React.ReactElement {
             <div className="flex items-center justify-between gap-3 rounded-md border border-ink/10 bg-paper-soft/40 px-4 py-3">
               <p className="text-sm text-ink-muted">
                 這座塔位由你持有,可補上生平、照片、影音、子孫與對話紀錄,並生成克隆聲音。
+                外觀主題、公開設定與回憶/留言審核在「管理哀悼版」。
               </p>
-              <Button variant="secondary" size="sm" onClick={enterEdit}>
-                <Pencil className="h-4 w-4" aria-hidden />
-                編輯資料
-              </Button>
+              <div className="flex shrink-0 gap-2">
+                <Link href={`/dashboard/${tokenId}`}>
+                  <Button variant="outline" size="sm">
+                    <Settings2 className="h-4 w-4" aria-hidden />
+                    管理哀悼版
+                  </Button>
+                </Link>
+                <Button variant="secondary" size="sm" onClick={enterEdit}>
+                  <Pencil className="h-4 w-4" aria-hidden />
+                  編輯資料
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-3 rounded-md border border-gold/40 bg-gold/5 px-4 py-3">
@@ -473,27 +478,16 @@ export default function TabletDetailPage(): React.ReactElement {
         ) : null}
       </div>
 
-      <Tabs defaultValue="public">
+      {/* 公開頁 (外觀與公開) 設定已移到燈塔管理頁 /dashboard/[tokenId] —
+          管理功能 (外觀公開 / 回憶審核 / 留言管理) 集中在同一頁。 */}
+      <Tabs defaultValue="bio">
         <TabsList>
-          <TabsTrigger value="public">公開頁</TabsTrigger>
           <TabsTrigger value="bio">生平</TabsTrigger>
           <TabsTrigger value="photos">照片牆</TabsTrigger>
           <TabsTrigger value="av">影音</TabsTrigger>
           <TabsTrigger value="descendants">子孫</TabsTrigger>
           <TabsTrigger value="chatlogs">對話紀錄</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="public">
-          <MemorialSettingsTab
-            tokenId={tokenId}
-            meta={meta}
-            isOwner={isOwner}
-            setTokenURI={setTokenURI}
-            waitForReceipt={waitForReceipt}
-            jwt={token}
-            onSaved={reload}
-          />
-        </TabsContent>
 
         <TabsContent value="bio">
           <Card>
@@ -885,211 +879,4 @@ function EmptyState({
       <p className="text-sm">{text}</p>
     </div>
   );
-}
-
-/**
- * 「公開頁」Tab —— 獨立於主編輯流程的追悼頁設定。
- *
- * 任何人都能看到:目前主題、公開狀態、追悼頁連結 (公開時)。
- * owner 額外能:切背景主題、開關「公開」,按「套用並上鏈」一鍵簽名上鏈
- * (走共用 buildAndSaveTabletMetadata,只動 background/public 兩欄,其餘原封保留)。
- *
- * 這個 Tab 有自己的本地 state 與存檔,不依賴上方的「編輯資料」流程 —— 讓
- * 「公開」這件事成為一個獨立、隨時可改的分類。
- */
-function MemorialSettingsTab({
-  tokenId,
-  meta,
-  isOwner,
-  setTokenURI,
-  waitForReceipt,
-  jwt,
-  onSaved,
-}: {
-  tokenId: string;
-  meta: TabletMetadata | null | undefined;
-  isOwner: boolean;
-  setTokenURI: (uri: string) => Promise<`0x${string}`>;
-  waitForReceipt: (hash: `0x${string}`) => Promise<void>;
-  jwt: string | null;
-  onSaved: () => Promise<void> | void;
-}): React.ReactElement {
-  const { showError } = useError();
-  const currentTheme = meta?.dsas.background ?? DEFAULT_THEME;
-  const currentPublic = meta?.dsas.public ?? false;
-
-  const [theme, setTheme] = React.useState<MemorialTheme>(currentTheme);
-  const [isPublic, setIsPublic] = React.useState<boolean>(currentPublic);
-  const [stage, setStage] = React.useState<TabletSaveStage | null>(null);
-
-  // meta 重載後 (例如存完 reload) 把本地 state 重新對齊鏈上值。
-  React.useEffect(() => {
-    setTheme(currentTheme);
-    setIsPublic(currentPublic);
-  }, [currentTheme, currentPublic]);
-
-  const dirty = theme !== currentPublicTheme(meta) || isPublic !== currentPublic;
-  const busy = stage !== null;
-  const previewUrl = typeof window !== "undefined" ? `${window.location.origin}/baibai` : "/baibai";
-
-  const handleApply = async (): Promise<void> => {
-    if (!meta) {
-      showError("無法上鏈", "這座塔位缺少 metadata,請先到其他 Tab 補基本資料。");
-      return;
-    }
-    try {
-      await buildAndSaveTabletMetadata(
-        meta,
-        { background: theme, public: isPublic },
-        {
-          tokenId,
-          setTokenURI,
-          waitForReceipt,
-          jwt: jwt ?? undefined,
-          onStage: setStage,
-        },
-      );
-      setStage(null);
-      await onSaved();
-    } catch (e) {
-      setStage(null);
-      const msg = e instanceof Error ? e.message : "套用失敗";
-      showError("套用並上鏈失敗", msg);
-    }
-  };
-
-  const themeDef = getTheme(theme);
-
-  return (
-    <div className="flex flex-col gap-4">
-      {/* 狀態總覽 (所有人可見) */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span
-              className="h-12 w-16 shrink-0 rounded"
-              style={{
-                background: themeDef.heroImage
-                  ? `url(${themeDef.heroImage}) center/cover`
-                  : themeDef.background,
-                border: `1px solid ${themeDef.accent}66`,
-              }}
-            />
-            <div className="flex flex-col">
-              <span className="text-sm text-ink">
-                目前主題:<strong>{themeDef.label}</strong>
-              </span>
-              <span className="text-sm">
-                {currentPublic ? (
-                  <span className="text-emerald-700">● 已公開 — 出現在線上紀念館</span>
-                ) : (
-                  <span className="text-ink-muted">○ 未公開 — 僅持有連結者可見</span>
-                )}
-              </span>
-            </div>
-          </div>
-          {currentPublic ? (
-            <a
-              href={previewUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-gold-dark underline underline-offset-2"
-            >
-              前往線上紀念館
-            </a>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {/* owner 控制 */}
-      {isOwner ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">外觀與公開設定</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-ink">追悼頁背景主題</span>
-              <div className="flex flex-wrap gap-2">
-                {MEMORIAL_THEMES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setTheme(t.id)}
-                    aria-pressed={theme === t.id}
-                    className={`flex flex-col items-center gap-1 rounded-md border p-1.5 text-xs transition-all disabled:opacity-50 ${
-                      theme === t.id ? "border-gold ring-2 ring-gold/40" : "border-ink/15 hover:border-gold/50"
-                    }`}
-                    title={t.label}
-                  >
-                    <span
-                      className="h-10 w-14 rounded"
-                      style={{
-                        background: t.heroImage
-                          ? `url(${t.heroImage}) center/cover`
-                          : t.background,
-                        border: `1px solid ${t.accent}55`,
-                      }}
-                    />
-                    <span className="text-ink-muted">{t.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <label className="flex items-start gap-3 rounded-md border border-ink/10 bg-paper-soft/40 p-3">
-              <input
-                type="checkbox"
-                checked={isPublic}
-                disabled={busy}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-gold"
-              />
-              <span className="flex flex-col text-sm">
-                <span className="font-medium text-ink">公開追悼頁</span>
-                <span className="text-xs text-ink-muted">
-                  勾選後,這座塔位會出現在線上紀念館,任何人都能進來追思、留言、分享回憶;
-                  取消則只有持有連結的人能看。需「套用並上鏈」後生效。
-                </span>
-              </span>
-            </label>
-
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" size="sm" loading={busy} disabled={busy || !dirty} onClick={() => void handleApply()}>
-                <Save className="h-4 w-4" aria-hidden />
-                套用並上鏈
-              </Button>
-              <span className="text-sm text-ink-muted">
-                {stage === "building"
-                  ? "重組 metadata 中……"
-                  : stage === "uploading"
-                    ? "上傳中……"
-                    : stage === "signing"
-                      ? "請在錢包簽名……"
-                      : stage === "confirming"
-                        ? "等待上鏈確認(約 12 秒)……"
-                        : stage === "syncing"
-                          ? "同步鏈上資料中……"
-                          : stage === "indexing"
-                            ? "重建記憶索引中……"
-                            : stage === "done"
-                              ? "完成 ✓"
-                              : dirty
-                                ? "有未套用的變更"
-                                : "主題與公開狀態都是最新的。"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="text-sm text-ink-muted">這座塔位的外觀與公開設定由持有者管理。</p>
-      )}
-    </div>
-  );
-}
-
-/** 取現有 metadata 的主題 (缺省回 DEFAULT_THEME) — 給 dirty 比對用。 */
-function currentPublicTheme(meta: TabletMetadata | null | undefined): MemorialTheme {
-  return meta?.dsas.background ?? DEFAULT_THEME;
 }

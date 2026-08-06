@@ -53,8 +53,7 @@ function SiteHeader(): React.ReactElement {
           <NavLink href="/about">關於</NavLink>
           <NavLink href="/mint">建立燈塔</NavLink>
           <NavLink href="/dashboard">燈塔典藏</NavLink>
-          <NavLink href="/registry">燈塔總覽</NavLink>
-          <NavLink href="/baibai">線上紀念館</NavLink>
+          <NavLink href="/registry">線上紀念館</NavLink>
         </nav>
         <div className="hidden md:block">
           <WalletConnect compact />

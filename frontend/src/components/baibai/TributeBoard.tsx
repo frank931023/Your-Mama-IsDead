@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { useError } from "@/components/ErrorDialog";
 import { truncateAddress } from "@/lib/utils";
 import { createTribute, listTributes, type Tribute, type TributeKind } from "@/lib/api";
+import { getStoredInviteCode } from "@/lib/invite";
 
 export interface TributeBoardTheme {
   accent: string;
@@ -104,12 +105,16 @@ export function TributeBoard({ tokenId, theme, onSubmitted, liveTribute }: Tribu
     if (!trimmed) return;
     setSubmitting(true);
     try {
-      const created = await createTribute(tokenId, {
-        message: trimmed,
-        fromName: name.trim() || undefined,
-        fromAddress: address ?? undefined,
-        kind,
-      });
+      const created = await createTribute(
+        tokenId,
+        {
+          message: trimmed,
+          fromName: name.trim() || undefined,
+          fromAddress: address ?? undefined,
+          kind,
+        },
+        getStoredInviteCode(tokenId),
+      );
       setList((prev) => (prev ? [created, ...prev] : [created]));
       setMessage("");
       onSubmitted?.(created);

@@ -67,7 +67,7 @@ services:
     # npm install 途中網路逾時等暫時性失敗會讓容器退出,自動重跑即可續傳
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "14000:14000"
     depends_on:
       postgres:
         condition: service_healthy

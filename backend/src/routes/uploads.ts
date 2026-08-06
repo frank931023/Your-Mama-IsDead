@@ -45,7 +45,7 @@ interface LocalFileMeta {
 /**
  * Storage mode = "local" 的落地實作:串流寫入 LOCAL_UPLOAD_DIR,邊寫邊算
  * sha256,以雜湊為檔名(天然去重),旁邊放 <hash>.json 記 content-type。
- * 回傳的 URI 是 backend 自己的 HTTP 路由 — 瀏覽器(localhost:4000)與
+ * 回傳的 URI 是 backend 自己的 HTTP 路由 — 瀏覽器(localhost:14000)與
  * backend 容器內(自己)都解析得到;鏈上 tokenURI 存這個字串也完全合法。
  */
 async function saveLocalFile(

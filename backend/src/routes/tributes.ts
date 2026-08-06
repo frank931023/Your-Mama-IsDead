@@ -16,6 +16,7 @@ import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
+import { requireWriteAccess } from "../lib/access.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
 import { broadcastTribute } from "../lib/ceremony-hub.js";
 
@@ -85,8 +86,8 @@ export const tributeRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     return reply.send(rows.map(serialize));
   });
 
-  // POST /api/tributes/:tokenId — 任何人都可留言,不要求 SIWE
-  app.post("/:tokenId", async (request, reply) => {
+  // POST /api/tributes/:tokenId — 公開塔位任何人可留;不公開需邀請碼;私人僅屋主。
+  app.post("/:tokenId", { preHandler: [requireWriteAccess("tokenId")] }, async (request, reply) => {
     const params = TokenIdParam.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
 

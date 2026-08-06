@@ -22,6 +22,7 @@
 import { randomUUID } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
+import { codeGrantsAccess, loadTabletAccess } from "./access.js";
 
 const PATH_RE = /^\/api\/ceremony\/(\d+)\/ws$/;
 
@@ -99,16 +100,40 @@ export function attachCeremonyHub(server: HttpServer, log?: Logger): void {
 
   server.on("upgrade", (req, socket, head) => {
     let match: RegExpExecArray | null;
+    let inviteCode: string | null = null;
     try {
       const url = new URL(req.url ?? "", "http://localhost");
       match = PATH_RE.exec(url.pathname);
+      inviteCode = url.searchParams.get("code");
     } catch {
       return; // 交給其他 upgrade handler
     }
     if (!match) return; // 不是公祭路徑,放手
 
     const tokenId = match[1]!;
-    wss.handleUpgrade(req, socket, head, (client: RoomSocket) => {
+
+    // 可見度閘門:PUBLIC 放行;UNLISTED 需有效邀請碼 (?code=);PRIVATE 一律關閉
+    // (私人模式沒有「多人」— 屋主獨自追思不需公祭房間)。查 DB 是 async,
+    // 先驗完再 handleUpgrade。
+    void (async () => {
+      try {
+        const row = await loadTabletAccess(BigInt(tokenId));
+        const ok =
+          !!row &&
+          (row.visibility === "PUBLIC" ||
+            (row.visibility === "UNLISTED" && codeGrantsAccess(row, inviteCode)));
+        if (!ok) {
+          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+      } catch (err) {
+        log?.warn({ err, tokenId }, "ceremony gate check failed");
+        socket.destroy();
+        return;
+      }
+
+      wss.handleUpgrade(req, socket, head, (client: RoomSocket) => {
       const room = roomOf(tokenId);
       client.peerId = randomUUID().slice(0, 8);
       room.add(client);
@@ -227,7 +252,8 @@ export function attachCeremonyHub(server: HttpServer, log?: Logger): void {
       };
       client.on("close", leave);
       client.on("error", leave);
-    });
+      });
+    })();
   });
 
   // 心跳:30 秒 ping 一次,收不到 pong 的殭屍連線直接收掉,

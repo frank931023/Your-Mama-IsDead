@@ -21,6 +21,7 @@ import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
 import { pinJSON } from "../lib/ipfs.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
+import { requireWriteAccess } from "../lib/access.js";
 import { indexApprovedStory, removeStoryChunks } from "../lib/rag.js";
 
 const TokenIdParam = z.object({
@@ -136,7 +137,7 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   );
 
   // POST /api/stories/:tokenId — 任何人投稿;內容先 pin 到 IPFS,狀態 PENDING
-  app.post("/:tokenId", async (request, reply) => {
+  app.post("/:tokenId", { preHandler: [requireWriteAccess("tokenId")] }, async (request, reply) => {
     const params = TokenIdParam.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
 

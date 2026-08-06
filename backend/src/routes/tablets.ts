@@ -27,6 +27,13 @@ import {
   getTokenURI,
 } from "../chain.js";
 import { fetchIPFS } from "../lib/ipfs.js";
+import { requireAuth, requireOwner } from "../auth/middleware.js";
+import {
+  codeGrantsAccess,
+  inviteCodeFrom,
+  loadTabletAccess,
+  newInviteCode,
+} from "../lib/access.js";
 import { env } from "../lib/env.js";
 
 const TokenIdParam = z.object({
@@ -71,6 +78,7 @@ function serializeTablet(t: {
   artifactURI: string | null;
   metadataJson: unknown;
   public: boolean;
+  visibility: string;
   syncedAt: Date | null;
 }): Record<string, unknown> {
   return {
@@ -81,6 +89,8 @@ function serializeTablet(t: {
     artifactURI: t.artifactURI,
     metadata: t.metadataJson,
     public: t.public,
+    visibility: t.visibility,
+    // 注意:inviteCode 絕不進 serialize — 只有 owner 端點 (GET /:tokenId/invite) 回傳。
     syncedAt: t.syncedAt?.toISOString() ?? null,
   };
 }
@@ -143,6 +153,10 @@ async function syncOnce(tokenId: bigint): Promise<{
       artifactURI: artifactURI || null,
       metadataJson: metadata as never,
       public: publicFlag ?? false,
+      // 首次入庫:依鏈上 public 給可見度預設,並發一組邀請碼。
+      // 之後可見度只由 PATCH /visibility 管,鏈上同步不覆蓋 (邀請碼不能上鏈)。
+      visibility: publicFlag ? "PUBLIC" : "UNLISTED",
+      inviteCode: newInviteCode(),
       syncedAt: new Date(),
     },
     update: {
@@ -169,17 +183,111 @@ export const tabletRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     return rows.map(serializeTablet);
   });
 
-  // GET /api/tablets/registry/public  —  only tablets the owner opted to make
-  // public (dsas.public === true, synced into the `public` column). This is
-  // what /baibai and the public registry view read so private memorials stay
-  // hidden. Toggling visibility takes effect after the owner's setTokenURI + sync.
+  // GET /api/tablets/registry/public  —  只列 visibility=PUBLIC 的塔位
+  // (線上紀念館 /registry 的資料源)。可見度由屋主在管理頁即時切換 (DB-only)。
   app.get("/registry/public", async () => {
     const rows = await prisma.tablet.findMany({
-      where: { public: true, ...excludeWhere() },
+      where: { visibility: "PUBLIC", ...excludeWhere() },
       orderBy: { tokenId: "desc" },
     });
     return rows.map(serializeTablet);
   });
+
+  // ── 可見度 + 邀請碼 ──────────────────────────────────────────────────────
+
+  // GET /api/tablets/:tokenId/access?code=  —  公開端點:告訴前端這座塔位的
+  // 可見度與「這組碼能不能看」。頁面閘門用 (哀悼版進場檢查)。
+  app.get("/:tokenId/access", async (request, reply) => {
+    const params = TokenIdParam.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+    const tokenId = parseTokenId(params.data.tokenId);
+
+    const row = await loadTabletAccess(tokenId);
+    if (!row) return reply.code(404).send({ error: "tablet_not_synced" });
+
+    const code = inviteCodeFrom(request);
+    const codeValid = codeGrantsAccess(row, code);
+    const allowed =
+      row.visibility === "PUBLIC" || (row.visibility === "UNLISTED" && codeValid);
+
+    return reply.send({
+      tokenId: params.data.tokenId,
+      visibility: row.visibility,
+      allowed,
+      codeValid,
+      owner: row.owner, // 前端拿去比對已連線錢包 (owner 一律可看,UI 層放行)
+    });
+  });
+
+  // GET /api/tablets/:tokenId/invite  —  owner 專用:讀邀請碼。
+  app.get(
+    "/:tokenId/invite",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const tokenId = parseTokenId(params.data.tokenId);
+      const row = await prisma.tablet.findUnique({
+        where: { tokenId },
+        select: { visibility: true, inviteCode: true },
+      });
+      if (!row) return reply.code(404).send({ error: "tablet_not_synced" });
+      return reply.send({ visibility: row.visibility, code: row.inviteCode });
+    },
+  );
+
+  // PATCH /api/tablets/:tokenId/visibility  —  owner 專用:即時切換三態
+  // (DB-only,免簽名免 gas;邀請碼本來就不能上鏈)。
+  app.patch(
+    "/:tokenId/visibility",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const body = z
+        .object({ visibility: z.enum(["PUBLIC", "UNLISTED", "PRIVATE"]) })
+        .safeParse(request.body);
+      if (!body.success) return reply.code(400).send({ error: "invalid_body" });
+
+      const tokenId = parseTokenId(params.data.tokenId);
+      try {
+        const updated = await prisma.tablet.update({
+          where: { tokenId },
+          data: {
+            visibility: body.data.visibility,
+            // legacy public 欄跟著 visibility 走,讓還在讀它的舊介面顯示一致。
+            public: body.data.visibility === "PUBLIC",
+          },
+          select: { visibility: true, inviteCode: true },
+        });
+        return reply.send({ visibility: updated.visibility, code: updated.inviteCode });
+      } catch {
+        return reply.code(404).send({ error: "tablet_not_synced" });
+      }
+    },
+  );
+
+  // POST /api/tablets/:tokenId/invite/regenerate  —  owner 專用:換新邀請碼,
+  // 舊碼立即失效 (碼外流時用)。
+  app.post(
+    "/:tokenId/invite/regenerate",
+    { preHandler: [requireAuth, requireOwner("tokenId")] },
+    async (request, reply) => {
+      const params = TokenIdParam.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const tokenId = parseTokenId(params.data.tokenId);
+      try {
+        const updated = await prisma.tablet.update({
+          where: { tokenId },
+          data: { inviteCode: newInviteCode() },
+          select: { visibility: true, inviteCode: true },
+        });
+        return reply.send({ visibility: updated.visibility, code: updated.inviteCode });
+      } catch {
+        return reply.code(404).send({ error: "tablet_not_synced" });
+      }
+    },
+  );
 
   // POST /api/tablets/scan  —  probe the chain for token ids 1..MAX and sync each
   // newly-found tablet into the DB. Stops after STOP_AFTER_MISSES consecutive

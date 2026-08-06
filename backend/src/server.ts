@@ -102,6 +102,18 @@ async function main(): Promise<void> {
   const app = await buildServer();
   startTrainingWorker();
 
+  // ── Process 層保命網 ─────────────────────────────────────────────────────
+  // 任何漏網的同步例外 / 未處理的 promise rejection,都大聲記 log 而不是讓整個
+  // backend 無聲死掉 (曾發生:ws 對端異常斷線把非法 close code 丟進 ws.close()
+  // 直接炸掉 process → 前端全面 Failed to fetch)。個別壞掉的請求/連線就讓它壞,
+  // 服務本體要活著。
+  process.on("uncaughtException", (err) => {
+    app.log.error({ err }, "[FATAL-caught] uncaughtException — server kept alive");
+  });
+  process.on("unhandledRejection", (reason) => {
+    app.log.error({ reason }, "[FATAL-caught] unhandledRejection — server kept alive");
+  });
+
   const close = async (signal: NodeJS.Signals): Promise<void> => {
     app.log.info(`received ${signal}, shutting down`);
     await app.close();
