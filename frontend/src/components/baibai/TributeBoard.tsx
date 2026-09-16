@@ -115,7 +115,13 @@ export function TributeBoard({ tokenId, theme, onSubmitted, liveTribute }: Tribu
         },
         getStoredInviteCode(tokenId),
       );
-      setList((prev) => (prev ? [created, ...prev] : [created]));
+      // 自己送出的留言也會經公祭 WS 廣播回音;若廣播比 HTTP 回應先到,
+      // liveTribute effect 已插入同一則 — 這裡同樣要靠 id 去重,否則重複兩則。
+      setList((prev) => {
+        if (!prev) return [created];
+        if (prev.some((t) => t.id === created.id)) return prev;
+        return [created, ...prev];
+      });
       setMessage("");
       onSubmitted?.(created);
     } catch (e) {

@@ -23,6 +23,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Billboard, OrbitControls, Text, Html, useTexture } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import { WebGLGuard } from "./WebGLGuard";
+import { HallNameEntry } from "./HallNameEntry";
 import * as THREE from "three";
 import { ChevronLeft, Hand, Flame, Footprints, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
 
@@ -116,9 +117,23 @@ function readHallStyle(): HallStyleId {
   }
 }
 
-export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialHallProps): React.ReactElement {
-  const { showError } = useError();
+export function MemorialHall(props: MemorialHallProps): React.ReactElement {
   const { address } = useAccount();
+  const identity = address?.toLowerCase() ?? "guest";
+  return (
+    <HallNameEntry
+      key={`${props.tablet.tokenId}:${identity}`}
+      identity={identity}
+      memorialName={displayName(props.tablet.metadata, props.tablet.tokenId)}
+      onExit={props.onExit}
+    >
+      {(name) => <MemorialHallScene {...props} walkerName={name} />}
+    </HallNameEntry>
+  );
+}
+
+function MemorialHallScene({ tablet, onExit, showXiaojing = false, walkerName }: MemorialHallProps & { walkerName: string }): React.ReactElement {
+  const { showError } = useError();
   // 靈堂風格 (中式/西式),存 localStorage
   const [hallStyle, setHallStyle] = React.useState<HallStyleId>(() => readHallStyle());
   const styleDef = HALL_STYLES[hallStyle];
@@ -142,7 +157,6 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
   const [peerBubbles, setPeerBubbles] = React.useState<Map<string, { text: string; until: number }>>(
     () => new Map(),
   );
-  const walkerName = address ? truncateAddress(address) : "訪客";
   const [liveNotice, setLiveNotice] = React.useState<string | null>(null);
   const liveNoticeTimer = React.useRef<number | undefined>(undefined);
   const showLiveNotice = React.useCallback((text: string) => {
@@ -286,7 +300,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
     if (bowing) return;
     setBowing(true);
     // 線上公祭:讓同在靈堂的親友看到有人行禮
-    sendRitual("bow");
+    sendRitual("bow", walkerName);
     const cam = cameraRef.current;
     if (!cam) {
       setBowing(false);
@@ -325,7 +339,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
-  }, [bowing, sendRitual]);
+  }, [bowing, sendRitual, walkerName]);
 
   return (
     <div className="fixed inset-0 z-40 bg-black">
@@ -471,7 +485,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
         <Button
           onClick={() => {
             setIncenseLit(true);
-            sendRitual("incense");
+            sendRitual("incense", walkerName);
           }}
           disabled={incenseLit}
           variant="outline"
@@ -557,12 +571,17 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
 
       <TributeOverlay
         tokenId={tablet.tokenId}
+        defaultName={walkerName}
         open={tributesOpen}
         onClose={() => setTributesOpen(false)}
         onSubmitted={(t) => {
           setHasLeftTribute(true);
           setLastTribute(t);
-          setRecentTributes((prev) => [t, ...prev].slice(0, 5));
+          // 自己的留言也會經公祭 WS 廣播回音 (onTribute);誰先到不一定,
+          // 兩邊都要靠 id 去重,不然飄浮卡會出現同一則兩張。
+          setRecentTributes((prev) =>
+            prev.some((x) => x.id === t.id) ? prev : [t, ...prev].slice(0, 5),
+          );
         }}
       />
 
@@ -699,7 +718,7 @@ export function MemorialHall({ tablet, onExit, showXiaojing = false }: MemorialH
             sendPos={sendPos}
             onIncense={() => {
               setIncenseLit(true);
-              sendRitual("incense");
+              sendRitual("incense", walkerName);
             }}
             onBow={triggerBow}
             onHotspot={setHotspotHint}
@@ -1723,11 +1742,13 @@ function IncenseSmoke(): React.ReactElement | null {
  */
 function TributeOverlay({
   tokenId,
+  defaultName,
   open,
   onClose,
   onSubmitted,
 }: {
   tokenId: string;
+  defaultName: string;
   open: boolean;
   onClose: () => void;
   onSubmitted?: (t: Tribute) => void;
@@ -1737,7 +1758,7 @@ function TributeOverlay({
   const [list, setList] = React.useState<Tribute[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
-  const [name, setName] = React.useState("");
+  const [name, setName] = React.useState(defaultName);
   const [message, setMessage] = React.useState("");
 
   // 開啟時拉一次留言;關閉時不清,讓使用者重開即時看到
@@ -1825,11 +1846,7 @@ function TributeOverlay({
           />
           <div className="flex items-center justify-between text-xs text-ink-muted">
             <span>
-              {address ? (
-                <>以 <code className="font-mono">{truncateAddress(address)}</code> 留言</>
-              ) : (
-                "未連線錢包,將以匿名身份留言"
-              )}
+              {name.trim() ? `以「${name.trim()}」署名` : "未填寫稱呼"}
             </span>
             <Button type="submit" size="sm" disabled={!message.trim() || submitting}>
               {submitting ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Send className="h-3 w-3" aria-hidden />}
@@ -2136,6 +2153,8 @@ function bowAngle(progress: number): number {
 
 /** 名牌:troika Text 預設字型沒有 CJK,改用 CanvasTexture 畫(與輓聯同法) */
 function NameTag({ name }: { name: string }): React.ReactElement {
+  // Reserve enough width for CJK names; wallet abbreviations used a fixed canvas.
+  const width = Math.max(256, Array.from(name).length * 44 + 24);
   const texture = React.useMemo(
     () =>
       makeCanvasTexture(
@@ -2150,15 +2169,15 @@ function NameTag({ name }: { name: string }): React.ReactElement {
           ctx.fillStyle = "#f4e8cf";
           ctx.fillText(name, w / 2, h / 2);
         },
-        256,
+        width,
         80,
       ),
-    [name],
+    [name, width],
   );
   return (
     <Billboard position={[0, 1.68, 0]}>
       <mesh>
-        <planeGeometry args={[0.9, 0.28]} />
+        <planeGeometry args={[width / 256 * 0.9, 0.28]} />
         <meshBasicMaterial map={texture} transparent depthWrite={false} />
       </mesh>
     </Billboard>
