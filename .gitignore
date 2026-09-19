@@ -77,5 +77,8 @@ contracts/artifacts/
 # office lock files
 ~$*
 
-# demo videos (>100MB, exceeds GitHub file limit)
-docs/demo_videos/
+# demo videos (one is >100MB, over GitHub's per-file limit); screenshots in the same folder are tracked
+docs/demo_videos/*.mp4
+docs/demo_videos/*.mov
+docs/demo_videos/*.mkv
+docs/demo_videos/*.webm
