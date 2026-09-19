@@ -9,6 +9,8 @@
  *   - pos:3D 靈堂的化身位置同步 — 進入走動模式的訪客以 ~10Hz 廣播
  *     自己的位置/朝向,其他人畫面上就能看到他的身影移動
  *
+ * 這是 CEREMONY_TRANSPORT=ws 的通道;livekit 模式見 lib/livekit.ts(協定相同)。
+ *
  * 連線:ws://<backend>/api/ceremony/:tokenId/ws
  *   進房即發 {type:"welcome", id, peers:[目前有位置的化身…]} 給新客,
  *   離房廣播 {type:"peer_leave", id}。
@@ -23,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { codeGrantsAccess, loadTabletAccess } from "./access.js";
+import { broadcastTributeLivekit } from "./livekit.js";
 
 const PATH_RE = /^\/api\/ceremony\/(\d+)\/ws$/;
 
@@ -88,9 +91,11 @@ function broadcastPresence(tokenId: string): void {
 /**
  * 給 tributes POST 路由呼叫:留言寫入 DB 後,即時推給房間內所有人。
  * (送出者自己也會收到 — 前端以 id 去重,不會重複顯示。)
+ * CEREMONY_TRANSPORT=livekit 時同時推進 LiveKit 房間 (前端 LiveKit 連不上時會退回 ws)。
  */
 export function broadcastTribute(tokenId: string, tribute: unknown): void {
   broadcast(tokenId, { type: "tribute", tribute });
+  void broadcastTributeLivekit(tokenId, tribute);
 }
 
 const clamp = (v: number, range: number): number => Math.max(-range, Math.min(range, v));

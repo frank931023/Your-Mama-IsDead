@@ -3,9 +3,15 @@
  *
  * 兩種上傳模式:
  *   1. presign:Pinata V3 提供短時效簽名 JWT,瀏覽器直接 PUT 上去 (快)
- *   2. relay:後端代為釘到 IPFS (穩,但流量過後端)
+ *   2. relay:後端代為上傳 (穩,但流量過後端)
  *
- * presign 失敗 (帳號太舊 / endpoint 變動) 會自動 fallback 到 relay。
+ * relay 依 storage mode 落地:
+ *   arweave — 經 bundler (Irys,備援 Turbo) 上傳 Arweave,回傳 ar://<txid>
+ *   pinata  — 釘到 IPFS,並 best-effort 同步永存一份到 Arweave
+ *   local   — 存本地磁碟
+ *
+ * presign 只有 pinata 模式支援;其他模式、或 presign 失敗 (帳號太舊 /
+ * endpoint 變動) 一律 fallback 到 relay。
  * Frontend 預設用 relay (POST /api/uploads/relay),簡單可靠。
  */
 import { createHash, randomUUID } from "node:crypto";
@@ -20,7 +26,11 @@ import axios, { AxiosError } from "axios";
 import FormData from "form-data";
 import { env } from "../lib/env.js";
 import { getStorageMode } from "../lib/runtime-config.js";
-import { uploadBufferToArweave } from "../lib/arweave.js";
+import {
+  arweaveConfigured,
+  uploadBufferToArweave,
+  uploadBufferToArweaveOrThrow,
+} from "../lib/arweave.js";
 
 const PresignBody = z.object({
   filename: z.string().min(1).max(256),
@@ -95,13 +105,14 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       return reply.code(400).send({ error: "invalid_body", issues: parsed.error.issues });
     }
 
-    // 本地模式沒有「瀏覽器直傳」可言,一律導去 relay
-    if ((await getStorageMode()) === "local") {
+    // 只有 Pinata 支援瀏覽器直傳;arweave / local 模式一律導去 relay
+    const storageMode = await getStorageMode();
+    if (storageMode !== "pinata") {
       return reply.send({
         mode: "relay",
         uploadId: randomUUID(),
         relayUrl: "/api/uploads/relay",
-        reason: "storage_mode_local",
+        reason: `storage_mode_${storageMode}`,
       });
     }
 
@@ -159,8 +170,9 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
 
   /**
    * POST /api/uploads/relay
-   * multipart/form-data with a single `file` field. Server-side forwards
-   * to Pinata pinFileToIPFS using PINATA_JWT and returns { cid, uri, size }.
+   * multipart/form-data with a single `file` field. Uploads according to the
+   * current storage mode and returns { cid, uri, size, storage }.
+   * In arweave mode `cid` is the Arweave transaction id and `uri` is ar://<txid>.
    *
    * Requires @fastify/multipart to be registered on the parent instance.
    */
@@ -168,6 +180,9 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const storageMode = await getStorageMode();
     if (storageMode === "pinata" && !env.PINATA_JWT) {
       return reply.code(503).send({ error: "pinata_not_configured" });
+    }
+    if (storageMode === "arweave" && !arweaveConfigured()) {
+      return reply.code(503).send({ error: "arweave_not_configured" });
     }
 
     if (!request.isMultipart()) {
@@ -199,7 +214,7 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
       }
     }
 
-    // 先整包進記憶體:Pinata 與 Arweave 雙寫需要重複讀同一份內容。
+    // 先整包進記憶體:bundler 需要已知大小,Pinata 模式的雙寫也要重複讀同一份內容。
     // 大小上限由 @fastify/multipart 的 limits 把關,相片級檔案沒問題。
     let fileBuf: Buffer;
     try {
@@ -207,6 +222,25 @@ export const uploadRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     } catch (err) {
       request.log.error({ err }, "relay buffer read failed");
       return reply.code(400).send({ error: "file_read_failed" });
+    }
+
+    if (storageMode === "arweave") {
+      try {
+        const ar = await uploadBufferToArweaveOrThrow(fileBuf, contentType, filename);
+        return reply.send({
+          cid: ar.id,
+          uri: ar.uri,
+          name: filename,
+          contentType,
+          size: fileBuf.length,
+          storage: "arweave",
+          bundler: ar.bundler,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        request.log.error({ detail, size: fileBuf.length }, "Arweave relay upload failed");
+        return reply.code(502).send({ error: "arweave_upload_failed", detail });
+      }
     }
 
     const form = new FormData();

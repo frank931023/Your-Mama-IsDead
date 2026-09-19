@@ -69,7 +69,7 @@ function Pillars(): React.ReactElement {
     {
       icon: Database,
       title: "永久保存",
-      subtitle: "IPFS / Arweave",
+      subtitle: "Arweave",
       desc:
         "照片、影片與聲音不依賴單一平台，能被長久保存與驗證。",
     },

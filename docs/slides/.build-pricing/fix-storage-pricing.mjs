@@ -1,0 +1,41 @@
+import fs from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
+import {PresentationFile,FileBlob} from '@oai/artifact-tool';
+const work='C:/Users/kk865/OneDrive/Desktop/your-mama-is-dead/Your-Mama-IsDead/docs/slides';
+const tmp=work+'/.build-pricing';
+const skill='C:/Users/kk865/.codex/plugins/cache/openai-primary-runtime/presentations/26.905.11957/skills/presentations';
+const runtime='C:/Users/kk865/.cache/codex-runtimes/codex-primary-runtime/dependencies';
+process.env.RUNTIME_NODE_MODULES=runtime+'/node/node_modules';
+const {finalizePresentation}=await import(pathToFileURL(skill+'/container_tools/artifact_tool_utils.mjs').href);
+const p=await PresentationFile.importPptx(await FileBlob.load(work+'/output/Aeterlux-SaaS-Pricing-Refined.pptx'));
+console.log((await p.inspect({kind:'slide',maxChars:1000})).ndjson);
+const s=p.resolve('sl/y90nupkv');
+const shapeByName=name=>s.shapes.items.find(shape=>shape.name===name);
+shapeByName('subtitle').text.replace('月費支付持續互動與維運，分身建置及永久封存採一次性收費。','永久封存一次付費，AI 互動按月訂閱，分身建置另收一次性費用。');
+shapeByName('terms').text.replace('試營運建議價，均為新臺幣含稅。素材空間為一般儲存；語音按成功生成音訊計量。成本假設與來源詳見備註。','試營運建議價，均為新臺幣含稅。月費含 AI 互動與平台維運，永久封存另計。語音按成功生成音訊計量。詳見備註。');
+shapeByName('feature-2-3').text.replace('語音 60 分／月、5 GiB 空間','語音互動 60 分／月');
+for(const i of [0,1]){
+ s.shapes.deleteById(shapeByName(`feature-${i}-2`).id);
+ s.shapes.deleteById(shapeByName(`check-${i}-2`).id);
+ [0,1,3].forEach((j,index)=>{
+  shapeByName(`feature-${i}-${j}`).position.top=443+index*48;
+  shapeByName(`check-${i}-${j}`).position.top=443+index*48;
+ });
+}
+let notes=await fs.readFile(tmp+'/speaker-notes.txt','utf8');
+const replace=(from,to)=>{if(!notes.includes(from))throw new Error('Missing source: '+from);notes=notes.replace(from,to);};
+replace('一個公開追思頁、親友留言、生平及基本照片；100 MiB 一般素材空間。不含 AI、NFT 鑄造或 Arweave 永久封存。','一個公開追思頁、親友留言、生平及基本照片展示。不含 AI、NFT 鑄造或 Arweave 永久封存費；素材可引用已封存的資料，尚未封存的素材另購一次性封存服務。');
+replace('AI 文字 300 則／月、1 GiB 一般素材空間、邀請碼與回憶審核。','AI 文字 300 則／月、邀請碼與回憶審核。');
+replace('AI 文字額度提高至600則／月，5 GiB 一般素材空間，本人聲音與3D頭像互動','AI 文字額度提高至600則／月，本人聲音與3D頭像互動');
+replace('6. 一般素材空間是平台運作期間的可更新儲存，不是每月可新增相同量的永久儲存。月費取消後AI停用，已付費永久封存的資料仍依儲存協議存在，NFT不因欠月費而被撤回；免費追思頁依平台營運政策提供，不把鏈上保存與平台網站終身可用混為一談。免費版降級可先提供30天匯出窗口，超額一般素材的保存期限須在正式條款明列。','6. 三個方案均不搭售按月儲存容量。永久素材加密後存入 Arweave，一次付費；新增素材或重新上傳新版本依實際新增量另付一次性封存費，已完成封存的資料不重複收月租。月費只支付 AI 互動、記憶檢索及平台維運；資料庫、檢索索引、運算快取與必要備份是平台運作成本，不是向家屬重複販售永久儲存空間。取消訂閱即停止付費 AI 服務，已付費封存資料仍依儲存協議存在，NFT不因欠月費而被撤回。免費追思頁依平台營運政策提供，永久保存不等於承諾平台網站及 AI 服務終身免費運作。');
+replace('網路備份費與持續索引成本另在月費模型，不能說4990全是Arweave成本。','平台運作所需的快取、索引與備份列為持續維運成本，不對已封存資料收取儲存月租；也不能把4990全額稱為Arweave成本。');
+replace('七、每月固定與變動成本','七、每月固定與變動成本\n以下維運預算包含平台 DB、RAG 索引、運算快取、備份及傳輸，不包含每月購買 Arweave 空間。永久封存成本只在一次性訂單計入。本次移除方案容量後，AI額度、設備及維運預算假設不變，所以原有估算金額維持；實際流量與快取成本仍需試營運量測。');
+if(/100 MiB 一般素材空間|1 GiB 一般素材空間|5 GiB 一般素材空間|超額一般素材/.test(notes))throw new Error('Old storage quota remains');
+s.speakerNotes.textFrame.setText(notes);
+await fs.writeFile(tmp+'/speaker-notes-storage-corrected.txt',notes);
+const candidate=tmp+'/candidate-storage-corrected.pptx',final=work+'/output/Aeterlux-SaaS-Pricing-Final.pptx';
+await (await PresentationFile.exportPptx(p)).save(candidate);
+const result=await finalizePresentation({workspaceDir:work,candidatePath:candidate,finalPath:final,pythonExecutable:runtime+'/python/python.exe',integrityValidatorPath:skill+'/container_tools/inspect_presentation_package_integrity.py',layoutValidatorPath:skill+'/container_tools/inspect_presentation_layout_geometry.py',layoutArgs:['--expected-slide-size-emu','15240000,8572500','--validate-heading-fit'],explicitTotalSlideCount:1,requiredNativeTableOwnerSlides:[],requiredNativeChartOwnerSlides:[],fontPolicy:{basis:'design',families:['Microsoft JhengHei']},verifyArtifactToolImport:true,receiptPath:tmp+'/validation-storage-corrected.json'});
+console.log(JSON.stringify({finalPath:result.finalPath,package:result.packageIntegrity.status,layoutFindings:result.presentationLayout.finding_count}));
+const verified=await PresentationFile.importPptx(await FileBlob.load(final));
+await fs.writeFile(work+'/output/Aeterlux-SaaS-Pricing-Final.png',new Uint8Array(await (await verified.export({slide:verified.slides.items[0],format:'png',scale:1})).arrayBuffer()));

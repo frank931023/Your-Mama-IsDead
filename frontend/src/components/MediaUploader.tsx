@@ -1,22 +1,26 @@
 "use client";
 
 /**
- * 多檔案 IPFS 上傳元件
+ * 多檔案上傳元件
  *
- * 拖拉或點擊選檔 → 透過 backend /api/uploads/relay 釘到 IPFS。
+ * 拖拉或點擊選檔 → 透過 backend /api/uploads/relay 存進永久儲存 (Arweave / IPFS)。
  * 每個檔案各自有上傳進度條;失敗的整批彈 ErrorDialog 列出失敗原因。
  *
  * 三種使用模式 (透過 props):
  *   - single=true        只保留最後一個成功的 (用於大頭照)
  *   - multiple=true      可多選 (預設;照片牆/影音都用這個)
  *   - multiple=false     單檔但不限制歷史 (沒在用)
+ *
+ * deferUpload=true (啟用 Lit 加密時的私密素材):選檔後不上傳,只把檔案暫存在瀏覽器,
+ * 以 local:<uuid> 佔位;等拿到 tokenId 後由 lib/lit/artifact.ts 加密再上傳。
  */
 import * as React from "react";
-import { Loader2, Upload, X, FileText, Image as ImageIcon, Music, Film } from "lucide-react";
+import { Loader2, Lock, Upload, X, FileText, Image as ImageIcon, Music, Film } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { useError } from "@/components/ErrorDialog";
 import { uploadRelay, type UploadedAsset } from "@/lib/api";
+import { dropStashed, isLocalUri, localPreviewUrl, stashFile } from "@/lib/lit/pending-files";
 import { cn, ipfsToHttps } from "@/lib/utils";
 
 export interface MediaUploaderProps {
@@ -26,8 +30,21 @@ export interface MediaUploaderProps {
   multiple?: boolean;
   /** When set, only one asset is kept at a time. */
   single?: boolean;
+  /** 不上傳,暫存在瀏覽器等加密 (見檔頭說明)。 */
+  deferUpload?: boolean;
   value: UploadedAsset[];
   onChange: (assets: UploadedAsset[]) => void;
+}
+
+/** 暫存檔案並回傳 local: 佔位資產。 */
+export function stashAsset(file: File): UploadedAsset {
+  return {
+    uri: stashFile(file),
+    cid: "",
+    name: file.name,
+    contentType: file.type || "application/octet-stream",
+    size: file.size,
+  };
 }
 
 interface PendingUpload {
@@ -43,6 +60,7 @@ export function MediaUploader({
   accept,
   multiple = true,
   single = false,
+  deferUpload = false,
   value,
   onChange,
 }: MediaUploaderProps): React.ReactElement {
@@ -57,6 +75,17 @@ export function MediaUploader({
     async (files: FileList | File[]): Promise<void> => {
       const list = Array.from(files);
       if (list.length === 0) return;
+
+      if (deferUpload) {
+        const stashed = list.map(stashAsset);
+        if (single) {
+          dropStashed(value.map((a) => a.uri).filter(isLocalUri));
+          onChange(stashed.slice(-1));
+        } else {
+          onChange([...value, ...stashed]);
+        }
+        return;
+      }
 
       const incoming: PendingUpload[] = list.map((f) => ({
         id: `${f.name}-${f.size}-${Date.now()}-${Math.random()}`,
@@ -104,7 +133,7 @@ export function MediaUploader({
         }
       }
     },
-    [onChange, showError, single, value],
+    [deferUpload, onChange, showError, single, value],
   );
 
   const onDrop = (e: React.DragEvent<HTMLDivElement>): void => {
@@ -113,7 +142,10 @@ export function MediaUploader({
     if (e.dataTransfer?.files) void handleFiles(e.dataTransfer.files);
   };
 
-  const remove = (uri: string): void => onChange(value.filter((a) => a.uri !== uri));
+  const remove = (uri: string): void => {
+    if (isLocalUri(uri)) dropStashed([uri]);
+    onChange(value.filter((a) => a.uri !== uri));
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -194,7 +226,14 @@ export function MediaUploader({
               <p className="truncate text-xs text-ink" title={asset.name}>
                 {asset.name}
               </p>
-              <p className="truncate text-[10px] text-ink-muted">{asset.uri}</p>
+              {isLocalUri(asset.uri) ? (
+                <p className="flex items-center gap-1 text-[10px] text-gold-dark">
+                  <Lock className="h-3 w-3" aria-hidden />
+                  待加密上傳
+                </p>
+              ) : (
+                <p className="truncate text-[10px] text-ink-muted">{asset.uri}</p>
+              )}
               <button
                 type="button"
                 onClick={() => remove(asset.uri)}
@@ -216,7 +255,7 @@ function AssetThumb({ asset }: { asset: UploadedAsset }): React.ReactElement {
   if (ct.startsWith("image/")) {
     return (
       <img
-        src={ipfsToHttps(asset.uri)}
+        src={isLocalUri(asset.uri) ? localPreviewUrl(asset.uri) : ipfsToHttps(asset.uri)}
         alt={asset.name}
         className="h-24 w-full rounded object-cover"
         loading="lazy"

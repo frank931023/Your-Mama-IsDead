@@ -65,7 +65,9 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
     noticeTimer.current = window.setTimeout(() => setLiveNotice(null), 5_000);
   }, []);
 
-  const { onlineCount } = useCeremony(tablet.tokenId, {
+  // 3D 靈堂 (MemorialHall) 開著時由它自己連線;這裡先斷開,同一位訪客才不會被算成兩人。
+  const [hallOpen, setHallOpen] = React.useState(false);
+  const { onlineCount } = useCeremony(hallOpen ? undefined : tablet.tokenId, {
     onTribute: (t) => {
       setLiveTribute(t);
       showNotice(`${t.fromName || "有親友"} ${offeringOf(t.kind).verb}`);
@@ -74,7 +76,6 @@ export function MemorialScroll({ tablet, onExit }: MemorialScrollProps): React.R
       showNotice(`${name || "有親友"}${ritual === "bow" ? "獻上了三鞠躬" : "點燃了一炷香"}`),
   });
   // 進入 3D 靈堂(舊版拜拜畫面):點香 / 三鞠躬 / 留言 / 紀念卡都在那裡做。
-  const [hallOpen, setHallOpen] = React.useState(false);
   // ?hall=1 直接開靈堂 (分享連結 / 除錯用);mount 後才讀 URL,避免 SSR 水合不一致。
   React.useEffect(() => {
     try {

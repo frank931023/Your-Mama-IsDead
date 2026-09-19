@@ -25,7 +25,20 @@ import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import { WebGLGuard } from "./WebGLGuard";
 import { HallNameEntry } from "./HallNameEntry";
 import * as THREE from "three";
-import { ChevronLeft, Hand, Flame, Footprints, MessageSquare, Send, Loader2, MessagesSquare, Download } from "lucide-react";
+import {
+  ChevronLeft,
+  Hand,
+  Flame,
+  Footprints,
+  MessageSquare,
+  Send,
+  Loader2,
+  MessagesSquare,
+  Download,
+  Mic,
+  MicOff,
+  Volume2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { PersonaActivationModal } from "@/components/PersonaActivationModal";
@@ -164,7 +177,9 @@ function MemorialHallScene({ tablet, onExit, showXiaojing = false, walkerName }:
     window.clearTimeout(liveNoticeTimer.current);
     liveNoticeTimer.current = window.setTimeout(() => setLiveNotice(null), 5_000);
   }, []);
-  const { onlineCount, sendRitual, sendPos, sendPosLeave, sendChat, peersRef, peersVersion } = useCeremony(tablet.tokenId, {
+  const { onlineCount, sendRitual, sendPos, sendPosLeave, sendChat, peersRef, peersVersion, voice } = useCeremony(tablet.tokenId, {
+    // LiveKit 通道時可多人語音 (ws 通道 voice 為 null,不顯示麥克風)
+    voice: true,
     onChat: (peerId, text) => {
       setPeerBubbles((prev) => {
         const next = new Map(prev);
@@ -382,10 +397,50 @@ function MemorialHallScene({ tablet, onExit, showXiaojing = false, walkerName }:
             <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-emerald-300">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
               {onlineCount} 位親友同在靈堂
+              {voice && voice.speakingIds.size > 0 ? ` · ${voice.speakingIds.size} 人正在說話` : ""}
             </p>
           ) : null}
         </div>
-        <div className="w-24" /> {/* 占位讓中間真的居中 */}
+        {/* 右上:多人語音 (LiveKit);沒有語音時保留同寬占位讓中間真的居中 */}
+        <div className="flex w-24 flex-col items-end gap-1.5">
+          {voice ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void voice.toggleMic()}
+                aria-pressed={voice.micOn}
+                title={voice.micOn ? "關閉麥克風" : "開啟麥克風,與同在靈堂的親友說話"}
+                className={`pointer-events-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs backdrop-blur-sm transition-colors ${
+                  voice.micOn
+                    ? "border-emerald-300/60 bg-emerald-700/85 text-white"
+                    : "border-ink/15 bg-paper/80 text-ink hover:bg-paper"
+                }`}
+              >
+                {voice.micOn ? (
+                  <Mic className="h-3.5 w-3.5" aria-hidden />
+                ) : (
+                  <MicOff className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {voice.micOn ? "麥克風開" : "語音"}
+              </button>
+              {voice.needsAudioStart ? (
+                <button
+                  type="button"
+                  onClick={() => void voice.startAudio()}
+                  className="pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-gold/40 bg-black/60 px-2.5 py-1.5 text-xs text-paper backdrop-blur-sm hover:bg-black/75"
+                >
+                  <Volume2 className="h-3.5 w-3.5" aria-hidden />
+                  開啟聲音
+                </button>
+              ) : null}
+              {voice.micError ? (
+                <p className="max-w-[12rem] rounded bg-black/60 px-2 py-1 text-right text-[11px] text-red-200">
+                  無法使用麥克風,請確認瀏覽器已允許存取
+                </p>
+              ) : null}
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* 走動模式操作提示 */}
@@ -707,7 +762,12 @@ function MemorialHallScene({ tablet, onExit, showXiaojing = false, walkerName }:
         />
 
         {/* 線上公祭化身:別人的身影(永遠顯示)+ 自己的走動身影 */}
-        <PeerAvatars peersRef={peersRef} peersVersion={peersVersion} bubbles={peerBubbles} />
+        <PeerAvatars
+          peersRef={peersRef}
+          peersVersion={peersVersion}
+          bubbles={peerBubbles}
+          speakingIds={voice?.speakingIds}
+        />
         {walkMode ? (
           <SelfWalker
             controlsRef={controlsRef}
@@ -2635,7 +2695,15 @@ function SelfWalker({
 }
 
 /** 單一其他訪客的身影:向網路目標值內插移動,收到 ritual 時行禮 */
-function PeerFigure({ peer, bubble }: { peer: PeerState; bubble: string | null }): React.ReactElement {
+function PeerFigure({
+  peer,
+  bubble,
+  speaking,
+}: {
+  peer: PeerState;
+  bubble: string | null;
+  speaking: boolean;
+}): React.ReactElement {
   const groupRef = React.useRef<THREE.Group>(null);
   const poseRef = React.useRef<AttendeePose>({ bow: 0, seated: false });
 
@@ -2662,8 +2730,19 @@ function PeerFigure({ peer, bubble }: { peer: PeerState; bubble: string | null }
   return (
     <group ref={groupRef} position={[peer.cx, 0, peer.cz]}>
       <AttendeeFigure name={peer.name || "訪客"} poseRef={poseRef} />
-      {bubble ? <ChatBubble text={bubble} /> : null}
+      {bubble ? <ChatBubble text={bubble} /> : speaking ? <SpeakingBadge /> : null}
     </group>
+  );
+}
+
+/** 語音中的訪客頭上顯示一個小麥克風 (有聊天泡泡時讓位給泡泡)。 */
+function SpeakingBadge(): React.ReactElement {
+  return (
+    <Html position={[0, 1.95, 0]} center distanceFactor={7} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+      <div className="flex h-7 w-7 animate-pulse items-center justify-center rounded-full bg-emerald-600/90 text-white shadow-lg">
+        <Mic className="h-4 w-4" aria-hidden />
+      </div>
+    </Html>
   );
 }
 
@@ -2672,10 +2751,12 @@ function PeerAvatars({
   peersRef,
   peersVersion,
   bubbles,
+  speakingIds,
 }: {
   peersRef: React.MutableRefObject<Map<string, PeerState>>;
   peersVersion: number;
   bubbles: Map<string, { text: string; until: number }>;
+  speakingIds?: ReadonlySet<string>;
 }): React.ReactElement {
   // peersVersion 是刻意的重渲染觸發器;位置更新不經過 React
   void peersVersion;
@@ -2683,7 +2764,12 @@ function PeerAvatars({
   return (
     <>
       {peers.map((p) => (
-        <PeerFigure key={p.id} peer={p} bubble={bubbles.get(p.id)?.text ?? null} />
+        <PeerFigure
+          key={p.id}
+          peer={p}
+          bubble={bubbles.get(p.id)?.text ?? null}
+          speaking={speakingIds?.has(p.id) ?? false}
+        />
       ))}
     </>
   );

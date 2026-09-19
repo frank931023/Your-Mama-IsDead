@@ -6,7 +6,7 @@ into a packaged training artifact (LoRA + voice model + RAG index), uploads
 the bundle back to IPFS, and writes the manifest URI on chain via
 `setArtifactURI(tokenId, uri)`.
 
-This module corresponds to **PROTOTYPE_PLAN.md §八 (線下訓練腳本)**. Read that
+This module corresponds to **PROTOTYPE_PLAN_已過時.md §八 (線下訓練腳本)**. Read that
 section first; the scripts below intentionally mirror its numbering.
 
 ## Layout
@@ -53,7 +53,7 @@ is passed.
 ## Environment variables
 
 Loaded from the **repo-root** `.env` via `python-dotenv`. See
-`PROTOTYPE_PLAN.md §10.1` for the full list. The pipeline reads:
+`PROTOTYPE_PLAN_已過時.md §10.1` for the full list. The pipeline reads:
 
 | Variable | Used by | Purpose |
 |---|---|---|

@@ -8,16 +8,20 @@
  *   1. 上傳素材         大頭照(必填) + 照片/影音/文字/對話紀錄
  *   2. 家族紀錄快照     metadata 內的非權威來源(權威是鏈上 ERC-6150)
  *   3. 家族脈絡 + 同意   根節點 or 子節點 + 同意聲明
- *   4. 簽署與鑄造         上傳 metadata 到 IPFS → mintRoot/safeMintWithParent
+ *   4. 簽署與鑄造         上傳 metadata 到 Arweave → mintRoot/safeMintWithParent
  *
- * 草稿存 localStorage (key=DRAFT_KEY),關掉瀏覽器再開仍保留。
+ * 啟用 Lit 加密 (NEXT_PUBLIC_LIT_MODE=legacy|chipotle) 時,照片/影音/文字/對話紀錄
+ * 選檔後只暫存在瀏覽器;鑄造確認後拿到 tokenId,才在瀏覽器加密、上傳密文,
+ * 再請錢包簽第二筆交易把 manifest 寫進 artifactURI。公開 metadata 只留大頭照與基本資料。
+ *
+ * 草稿存 localStorage (key=DRAFT_KEY),關掉瀏覽器再開仍保留 (暫存的加密素材除外)。
  * 鑄造成功後會自動清掉草稿。
  */
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import type { Address } from "viem";
-import { Plus, Trash2, ArrowLeft, ArrowRight, Sparkles, Wand2, Check, Loader2 } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight, Sparkles, Wand2, Check, Loader2, Lock } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
@@ -29,14 +33,32 @@ import { ConsentForm } from "@/components/ConsentForm";
 import { MediaUploader } from "@/components/MediaUploader";
 import { ChatLogImporter } from "@/components/ChatLogImporter";
 import { useError } from "@/components/ErrorDialog";
-import { useMintTablet, useSiweLogin } from "@/lib/wallet";
+import {
+  useMintTablet,
+  useMintedTokenId,
+  useSetArtifactURI,
+  useSiweLogin,
+  useWaitForReceipt,
+} from "@/lib/wallet";
 import {
   uploadRelay,
   generateLamAvatar,
   getCloudStatus,
+  reindexMemory,
+  syncTablet,
   ApiError,
   type UploadedAsset,
 } from "@/lib/api";
+import { LIT_MODE, LIT_MODE_LABEL, litEnabled } from "@/lib/lit/config";
+import { dropStashed, isLocalUri } from "@/lib/lit/pending-files";
+import {
+  preflightLit,
+  privateChatlogTexts,
+  sealPrivateAssets,
+  stashedInputs,
+  type PrivateFileInput,
+  type SealStage,
+} from "@/lib/lit/artifact";
 import { buildTabletMetadata } from "@/lib/metadata-builder";
 import { ipfsToHttps } from "@/lib/utils";
 import type {
@@ -109,6 +131,61 @@ interface Draft {
   avatar: DraftAvatar;
 }
 
+type SubmitState =
+  | { status: "idle" }
+  | { status: "uploading"; message: string }
+  | { status: "signing"; message?: string }
+  | {
+      status: "success";
+      txHash: string;
+      metadataUri: string;
+      tokenId?: string;
+      artifactUri?: string;
+      note?: string;
+    }
+  | { status: "sealFailed"; txHash: string; metadataUri: string; tokenId: string; message: string }
+  | { status: "error"; message: string };
+
+/** 鑄造成功、還沒加密封存的私密素材 (封存失敗時可原地重試,不必重鑄)。 */
+interface PendingSeal {
+  tokenId: bigint;
+  files: PrivateFileInput[];
+  localUris: string[];
+  txHash: string;
+  metadataUri: string;
+}
+
+const SEAL_MESSAGE: Record<SealStage, string> = {
+  preparing: "連線 Lit、準備加密……",
+  encrypting: "在瀏覽器加密",
+  uploading: "上傳密文",
+  manifest: "上傳加密素材清單……",
+};
+
+function sealMessage(stage: SealStage, detail?: string): string {
+  return detail ? `${SEAL_MESSAGE[stage]}:${detail}` : SEAL_MESSAGE[stage];
+}
+
+/** 暫存檔只活在這個分頁;從 localStorage 還原草稿時要丟掉 local: 佔位。 */
+function withoutLocal(media: DraftMedia): DraftMedia {
+  const keep = (list: UploadedAsset[] = []): UploadedAsset[] => list.filter((a) => !isLocalUri(a.uri));
+  return {
+    portrait: keep(media.portrait),
+    photos: keep(media.photos),
+    videos: keep(media.videos),
+    audios: keep(media.audios),
+    texts: keep(media.texts),
+    chatlogs: (media.chatlogs ?? []).filter((c) => !isLocalUri(c.uri)),
+  };
+}
+
+function localUrisOf(media: DraftMedia): string[] {
+  return [
+    ...[media.photos, media.videos, media.audios, media.texts].flat().map((a) => a.uri),
+    ...media.chatlogs.map((c) => c.uri),
+  ].filter(isLocalUri);
+}
+
 const EMPTY_DRAFT: Draft = {
   basic: {
     name: "",
@@ -151,17 +228,16 @@ function MintFlow(): React.ReactElement {
   const router = useRouter();
   const { address } = useAccount();
   const { mintRoot, mintWithParent, isPending } = useMintTablet();
+  const mintedTokenId = useMintedTokenId();
+  const { setArtifactURI } = useSetArtifactURI();
+  const waitForReceipt = useWaitForReceipt();
+  const { login, logout, token } = useSiweLogin();
   const { showError } = useError();
 
   const [step, setStep] = React.useState(0);
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
-  const [submitState, setSubmitState] = React.useState<
-    | { status: "idle" }
-    | { status: "uploading"; message: string }
-    | { status: "signing" }
-    | { status: "success"; txHash: string; metadataUri: string }
-    | { status: "error"; message: string }
-  >({ status: "idle" });
+  const [submitState, setSubmitState] = React.useState<SubmitState>({ status: "idle" });
+  const pendingSeal = React.useRef<PendingSeal | null>(null);
 
   // Hydrate from localStorage
   React.useEffect(() => {
@@ -170,7 +246,11 @@ function MintFlow(): React.ReactElement {
       const raw = window.localStorage.getItem(DRAFT_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Draft;
-        setDraft({ ...EMPTY_DRAFT, ...parsed });
+        setDraft({
+          ...EMPTY_DRAFT,
+          ...parsed,
+          media: withoutLocal({ ...EMPTY_DRAFT.media, ...parsed.media }),
+        });
       }
     } catch {
       /* ignore */
@@ -212,11 +292,77 @@ function MintFlow(): React.ReactElement {
   })();
 
   /**
+   * 鑄造後的私密素材封存:加密上傳 → 簽 setArtifactURI → 等確認 → 建 AI 記憶索引。
+   * 失敗時停在 sealFailed,暫存檔還在,可原地重試 (燈塔已鑄造,不必重鑄)。
+   */
+  const sealAfterMint = async (pending: PendingSeal): Promise<void> => {
+    const { tokenId, files, localUris, txHash, metadataUri } = pending;
+    try {
+      const { manifestUri, added } = await sealPrivateAssets({
+        tokenId,
+        files,
+        onStage: (stage, detail) =>
+          setSubmitState({ status: "uploading", message: sealMessage(stage, detail) }),
+      });
+
+      setSubmitState({
+        status: "signing",
+        message: "請於錢包確認第二筆交易:把加密素材清單寫進鏈上 artifactURI……",
+      });
+      const artifactTx = await setArtifactURI(tokenId, manifestUri);
+      setSubmitState({ status: "uploading", message: "等待 artifactURI 上鏈確認……" });
+      await waitForReceipt(artifactTx);
+
+      // 私密對話紀錄:後端讀不到密文,趁明文還在瀏覽器時送去建 AI 記憶索引 (失敗不影響鑄造)
+      let note: string | undefined;
+      const chatlogTexts = await privateChatlogTexts(files, added);
+      if (chatlogTexts.length > 0) {
+        setSubmitState({ status: "uploading", message: "建立 AI 記憶索引(需簽署登入訊息)……" });
+        try {
+          await syncTablet(tokenId.toString());
+          const run = (jwt: string) => reindexMemory(tokenId.toString(), jwt, chatlogTexts);
+          try {
+            await run(token ?? (await login()));
+          } catch (err) {
+            if (!(err instanceof ApiError && err.status === 401)) throw err;
+            logout();
+            await run(await login());
+          }
+        } catch (err) {
+          note = `AI 記憶索引未完成(${err instanceof Error ? err.message : String(err)}),可稍後在燈塔頁解鎖私密記憶後重建。`;
+        }
+      }
+
+      dropStashed(localUris);
+      pendingSeal.current = null;
+      setSubmitState({
+        status: "success",
+        txHash,
+        metadataUri,
+        tokenId: tokenId.toString(),
+        artifactUri: manifestUri,
+        ...(note ? { note } : {}),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "加密上傳失敗";
+      showError("私密素材加密上傳失敗", msg);
+      setSubmitState({
+        status: "sealFailed",
+        txHash,
+        metadataUri,
+        tokenId: tokenId.toString(),
+        message: msg,
+      });
+    }
+  };
+
+  /**
    * 鑄造主流程:
    *   1. 從 draft 組裝 TabletMetadata (符合 ERC-721 + DSAS extension schema)
-   *   2. 上傳 metadata.json 到 IPFS,拿到 ipfs://<CID>
+   *   2. 上傳 metadata.json 到永久儲存 (Arweave),拿到 ar://<id>
    *   3. 呼叫合約 mintRoot 或 safeMintWithParent
    *   4. 成功後清掉 localStorage 草稿
+   *   5. 有私密素材 (Lit 模式) → 等確認取得 tokenId → sealAfterMint
    *
    * 任一步出錯都會彈 ErrorDialog,並把 submitState 切回 error 讓使用者重試。
    */
@@ -227,6 +373,23 @@ function MintFlow(): React.ReactElement {
       return;
     }
     try {
+      const privateFiles: PrivateFileInput[] = litEnabled
+        ? stashedInputs(
+            [
+              ["photo", draft.media.photos],
+              ["video", draft.media.videos],
+              ["audio", draft.media.audios],
+              ["text", draft.media.texts],
+            ],
+            draft.media.chatlogs,
+          )
+        : [];
+      // 先確認 Lit 可用再鑄造:免得燈塔鑄好了,私密素材卻加密不了
+      if (privateFiles.length > 0) {
+        setSubmitState({ status: "uploading", message: `確認 ${LIT_MODE_LABEL[LIT_MODE]} 可用……` });
+        await preflightLit();
+      }
+
       setSubmitState({ status: "uploading", message: "組裝 metadata……" });
 
       const deceased: DeceasedInfo = {
@@ -246,14 +409,22 @@ function MintFlow(): React.ReactElement {
         ...(draft.basic.epitaph ? { epitaph: draft.basic.epitaph } : {}),
       };
 
+      // 公開 metadata 只放已上傳的素材;暫存 (local:) 的是私密素材,鑄造後加密封存。
       const portrait = draft.media.portrait[0]?.uri;
+      const publicUris = (list: UploadedAsset[]): string[] =>
+        list.filter((a) => !isLocalUri(a.uri)).map((a) => a.uri);
+      const photos = publicUris(draft.media.photos);
+      const videos = publicUris(draft.media.videos);
+      const audios = publicUris(draft.media.audios);
+      const texts = publicUris(draft.media.texts);
+      const chatlogs = draft.media.chatlogs.filter((c) => !isLocalUri(c.uri));
       const assets: Assets = {
         ...(portrait ? { portrait } : {}),
-        ...(draft.media.photos.length > 0 ? { photos: draft.media.photos.map((a) => a.uri) } : {}),
-        ...(draft.media.videos.length > 0 ? { videos: draft.media.videos.map((a) => a.uri) } : {}),
-        ...(draft.media.audios.length > 0 ? { audios: draft.media.audios.map((a) => a.uri) } : {}),
-        ...(draft.media.texts.length > 0 ? { texts: draft.media.texts.map((a) => a.uri) } : {}),
-        ...(draft.media.chatlogs.length > 0 ? { chatlogs: draft.media.chatlogs } : {}),
+        ...(photos.length > 0 ? { photos } : {}),
+        ...(videos.length > 0 ? { videos } : {}),
+        ...(audios.length > 0 ? { audios } : {}),
+        ...(texts.length > 0 ? { texts } : {}),
+        ...(chatlogs.length > 0 ? { chatlogs } : {}),
       };
 
       const descendants: DescendantSnapshot[] = draft.descendants
@@ -284,12 +455,17 @@ function MintFlow(): React.ReactElement {
           : {}),
       });
 
-      setSubmitState({ status: "uploading", message: "上傳 metadata 至 IPFS……" });
+      setSubmitState({ status: "uploading", message: "上傳 metadata 至 Arweave 永久儲存……" });
       const blob = new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" });
       const file = new File([blob], `tablet-${Date.now()}.json`, { type: "application/json" });
       const uploaded = await uploadRelay(file);
 
-      setSubmitState({ status: "signing" });
+      setSubmitState({
+        status: "signing",
+        ...(privateFiles.length > 0
+          ? { message: "請於錢包確認鑄造交易(第 1 筆,共 2 筆)……" }
+          : {}),
+      });
       const result =
         draft.parentMode === "root"
           ? await mintRoot(address as Address, uploaded.uri)
@@ -299,12 +475,43 @@ function MintFlow(): React.ReactElement {
               uploaded.uri,
             );
 
-      setSubmitState({ status: "success", txHash: result.hash, metadataUri: uploaded.uri });
+      // 燈塔已送出鑄造 → 立刻清草稿,避免重新整理後重複鑄造
       try {
         window.localStorage.removeItem(DRAFT_KEY);
       } catch {
         /* ignore */
       }
+
+      if (privateFiles.length === 0) {
+        setSubmitState({ status: "success", txHash: result.hash, metadataUri: uploaded.uri });
+        return;
+      }
+
+      setSubmitState({ status: "uploading", message: "等待鑄造交易確認(約 12 秒)……" });
+      let tokenId: bigint;
+      try {
+        tokenId = await mintedTokenId(result.hash);
+      } catch (err) {
+        // 鑄造交易已送出:不能回到 error 狀態 (那裡的「重試」會再鑄一次)
+        const msg = err instanceof Error ? err.message : String(err);
+        showError("無法確認鑄造結果", msg);
+        setSubmitState({
+          status: "success",
+          txHash: result.hash,
+          metadataUri: uploaded.uri,
+          note: `無法確認新燈塔編號(${msg}),私密素材尚未加密上傳。交易確認後可到燈塔頁「編輯資料」重新加入。`,
+        });
+        return;
+      }
+      const pending: PendingSeal = {
+        tokenId,
+        files: privateFiles,
+        localUris: localUrisOf(draft.media),
+        txHash: result.hash,
+        metadataUri: uploaded.uri,
+      };
+      pendingSeal.current = pending;
+      await sealAfterMint(pending);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "鑄造失敗";
       showError("鑄造失敗", msg);
@@ -346,6 +553,9 @@ function MintFlow(): React.ReactElement {
           state={submitState}
           isPending={isPending}
           onSubmit={() => void submit()}
+          onRetrySeal={() => {
+            if (pendingSeal.current) void sealAfterMint(pendingSeal.current);
+          }}
           onView={(uri) => {
             // Naive routing: success page just shows tx hash; user can click into dashboard
             void uri;
@@ -480,6 +690,7 @@ function MediaStep({
   const portraitUri = media.portrait[0]?.uri;
   return (
     <div className="flex flex-col gap-4">
+      {litEnabled ? <PrivacyNotice /> : null}
       <Card>
         <CardHeader>
           <CardTitle>大頭照(必須一張)</CardTitle>
@@ -522,6 +733,7 @@ function MediaStep({
           <MediaUploader
             label="照片"
             multiple
+            deferUpload={litEnabled}
             accept="image/*"
             value={media.photos}
             onChange={(photos) => updateMedia({ photos })}
@@ -536,12 +748,14 @@ function MediaStep({
         <CardContent className="flex flex-col gap-6">
           <MediaUploader
             label="影片"
+            deferUpload={litEnabled}
             accept="video/*"
             value={media.videos}
             onChange={(videos) => updateMedia({ videos })}
           />
           <MediaUploader
             label="錄音 / 訪談"
+            deferUpload={litEnabled}
             accept="audio/*"
             value={media.audios}
             onChange={(audios) => updateMedia({ audios })}
@@ -557,6 +771,7 @@ function MediaStep({
         <CardContent>
           <MediaUploader
             label="文字"
+            deferUpload={litEnabled}
             accept=".txt,.md,.pdf,.doc,.docx"
             value={media.texts}
             onChange={(texts) => updateMedia({ texts })}
@@ -571,11 +786,29 @@ function MediaStep({
         </CardHeader>
         <CardContent>
           <ChatLogImporter
+            deferUpload={litEnabled}
             value={media.chatlogs}
             onChange={(chatlogs) => updateMedia({ chatlogs })}
           />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** Lit 加密啟用時的說明:哪些素材會加密、誰能解鎖、暫存檔的限制。 */
+function PrivacyNotice(): React.ReactElement {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-gold/40 bg-gold/5 p-4 text-sm">
+      <Lock className="mt-0.5 h-5 w-5 shrink-0 text-gold-dark" aria-hidden />
+      <div className="flex flex-col gap-1 text-ink">
+        <p className="font-medium">私密素材加密:{LIT_MODE_LABEL[LIT_MODE]}</p>
+        <p className="text-xs text-ink-muted">
+          生平照片、影音、文字與對話紀錄會在鑄造後於瀏覽器加密,只有密文存入 Arweave;
+          只有持有這座燈塔 NFT 的錢包能解鎖。大頭照與基本資料維持公開。
+          選好的檔案只暫存在這個分頁,重新整理頁面需重新選檔。
+        </p>
+      </div>
     </div>
   );
 }
@@ -888,25 +1121,25 @@ function SubmitStep({
   state,
   isPending,
   onSubmit,
+  onRetrySeal,
   onView,
 }: {
   draft: Draft;
-  state:
-    | { status: "idle" }
-    | { status: "uploading"; message: string }
-    | { status: "signing" }
-    | { status: "success"; txHash: string; metadataUri: string }
-    | { status: "error"; message: string };
+  state: SubmitState;
   isPending: boolean;
   onSubmit: () => void;
+  onRetrySeal: () => void;
   onView: (uri: string) => void;
 }): React.ReactElement {
+  const privateCount = localUrisOf(draft.media).length;
   return (
     <Card>
       <CardHeader>
         <CardTitle>確認並鑄造</CardTitle>
         <CardDescription>
-          按下鑄造後將先把 metadata 上傳到 IPFS,再請你於錢包簽署交易。
+          {privateCount > 0
+            ? "按下鑄造後:公開 metadata 上傳到 Arweave → 錢包簽署鑄造交易 → 私密素材在瀏覽器加密後上傳密文 → 錢包簽署第二筆交易寫入 artifactURI。"
+            : "按下鑄造後將先把 metadata 上傳到 Arweave 永久儲存,再請你於錢包簽署交易。"}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -924,7 +1157,19 @@ function SubmitStep({
         ) : null}
 
         {state.status === "signing" ? (
-          <p className="text-sm text-ink">請於錢包確認交易……</p>
+          <p className="text-sm text-ink">{state.message ?? "請於錢包確認交易……"}</p>
+        ) : null}
+
+        {state.status === "sealFailed" ? (
+          <div className="flex flex-col gap-2 rounded-md border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+            <p>
+              燈塔 #{state.tokenId} 已鑄造,但私密素材加密上傳未完成。檔案還暫存在這個分頁,
+              可以直接重試(不會重新鑄造)。
+            </p>
+            <Button onClick={onRetrySeal} size="sm" variant="secondary">
+              重試加密上傳
+            </Button>
+          </div>
         ) : null}
 
         {state.status === "error" ? (
@@ -945,6 +1190,12 @@ function SubmitStep({
             <p>
               Metadata URI:<code>{state.metadataUri}</code>
             </p>
+            {state.artifactUri ? (
+              <p>
+                加密素材清單 (artifactURI):<code>{state.artifactUri}</code>
+              </p>
+            ) : null}
+            {state.note ? <p className="text-amber-800">{state.note}</p> : null}
             <Button onClick={() => onView(state.metadataUri)} variant="secondary" size="sm">
               前往燈塔典藏
             </Button>
@@ -972,6 +1223,12 @@ function Summary({ draft }: { draft: Draft }): React.ReactElement {
           `文字 ${draft.media.texts.length} · 對話 ${draft.media.chatlogs.length}`
         }
       />
+      {litEnabled ? (
+        <Row
+          label="加密"
+          value={`${localUrisOf(draft.media).length} 件私密素材將加密(${LIT_MODE_LABEL[LIT_MODE]})`}
+        />
+      ) : null}
       <Row label="子孫" value={`${draft.descendants.length} 位`} />
       <Row
         label="家族脈絡"

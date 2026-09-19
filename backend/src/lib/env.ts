@@ -36,11 +36,24 @@ const EnvSchema = z.object({
   // 預設空字串 = 不排除任何 token。
   EXCLUDED_TOKEN_IDS: z.string().default(""),
   PINATA_JWT: z.string().optional(),
-  // ── Arweave 永存層 (ArDrive Turbo) ────────────────────────────────
-  // Ethereum 私鑰 (0x hex)。設定後 relay 上傳與 story JSON 會同步永存到
-  // Arweave (lib/arweave.ts):<100KiB 免費,大檔需先在 turbo.ar.io 為同
-  // 一地址儲值 Turbo Credits。不設 = 永存層停用,一切照舊走 IPFS。
+  // ── 儲存層 ────────────────────────────────────────────────────────
+  // 預設儲存模式;/admin 可在執行期覆寫(存 Redis)。未設則依已設定的
+  // 金鑰推導:有 Arweave 簽名金鑰 → arweave,否則有 PINATA_JWT → pinata,否則 local。
+  STORAGE_DRIVER: z.enum(["arweave", "pinata", "local"]).optional(),
+  // ── Arweave 永存層 (lib/arweave.ts) ───────────────────────────────
+  // 上傳經 bundler 打包成 ANS-104 data item 送上 Arweave:
+  //   irys  — 主要。以 Ethereum 私鑰簽名,費用從該地址在 IRYS_NODE 上的
+  //           預存餘額扣(需先用主網 ETH fund)。IRYS_PRIVATE_KEY 未設時沿用
+  //           TURBO_PRIVATE_KEY。⚠ Irys 公告舊版 Arweave 端點 2026-11-01 退役。
+  //   turbo — 備援。<100KiB 免費,大檔需在 turbo.ar.io 儲值 Turbo Credits。
+  // 主要 bundler 上傳失敗會自動改走另一個。
+  ARWEAVE_BUNDLER: z.enum(["irys", "turbo"]).default("irys"),
+  IRYS_NODE: z.string().url().default("https://node1.irys.xyz"),
+  IRYS_PRIVATE_KEY: z.string().optional(),
+  // Irys 查餘額 / fund 用的以太坊主網 RPC;未設用 SDK 內建預設。
+  IRYS_PROVIDER_URL: z.string().url().optional(),
   TURBO_PRIVATE_KEY: z.string().optional(),
+  ARWEAVE_GATEWAY: z.string().url().default("https://arweave.net"),
   COMPUTE_URL: z.string().url().optional(),
   IPFS_GATEWAY: z.string().url().default("https://gateway.pinata.cloud/ipfs/"),
   TRAINER_API_KEY: z.string().optional(),
@@ -108,7 +121,25 @@ const EnvSchema = z.object({
   RENDER_JWT_SECRET: z.string().optional(), // shared secret with render machine
   RENDER_JWT_AUDIENCE: z.string().default("ymid-render"),
   RENDER_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
+
+  // ── 線上公祭即時通道 (lib/livekit.ts) ─────────────────────────────
+  // ws      — 自建 WebSocket hub (ceremony-hub.ts):在線人數、儀式、化身走動、聊天氣泡
+  // livekit — LiveKit 房間:同樣的即時事件改走 data channel,另外支援多人語音
+  // 未設時:LiveKit 金鑰齊全 → livekit,否則 ws。LiveKit 連不上時前端會自動退回 ws。
+  CEREMONY_TRANSPORT: z.preprocess(emptyToUndefined, z.enum(["ws", "livekit"]).optional()),
+  // 瀏覽器連線用的 URL,例:ws://localhost:7880(docker 內建 dev server)或 wss://xxx.livekit.cloud
+  LIVEKIT_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  // 後端呼叫 LiveKit server API 用的位址;未設則由 LIVEKIT_URL 換成 http(s)
+  LIVEKIT_HOST_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  LIVEKIT_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+  LIVEKIT_API_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
+  LIVEKIT_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(7200),
 });
+
+/** docker env_file 會把 `KEY=` 傳成空字串;視同未設定。 */
+function emptyToUndefined(value: unknown): unknown {
+  return value === "" ? undefined : value;
+}
 
 export type Env = z.infer<typeof EnvSchema>;
 

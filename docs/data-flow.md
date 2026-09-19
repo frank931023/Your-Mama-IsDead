@@ -1,182 +1,229 @@
 # Data Flow — End to End
 
-## Phase 1: Mint a Tablet
+規格依據:[Aeterlux_系統概述文件_0914.docx](Aeterlux_系統概述文件_0914.docx)。以下流程以 Arweave 主要儲存路徑、啟用 Lit 加密與 LiveKit 公祭通道的設定說明。Lit 加密為選用功能;未啟用時,Phase 1 / 2 的私密素材會像大頭照一樣直接上傳並寫進公開 metadata。
+
+## Phase 1: 鑄造燈塔(Mint)
+
+大頭照與基本資料是公開的;照片 / 影音 / 文字 / 對話紀錄是私密素材,選檔後只暫存在瀏覽器,拿到 tokenId 後才加密上傳。
 
 ```mermaid
 sequenceDiagram
-    participant U as User (家屬)
+    participant U as 家屬
     participant W as MetaMask
     participant FE as Frontend
     participant BE as Backend
-    participant R as Render 機 (RTX 5090)
-    participant P as Pinata (IPFS)
+    participant AR as Irys → Arweave
+    participant L as Lit
     participant C as DigitalTablet (Sepolia)
 
-    U->>FE: 進 /mint, 填表 (name/origin/birth/death/descendants)
-    U->>FE: 拖入 photos/videos/audios/chatlogs
-    FE->>BE: POST /api/uploads/relay (each asset)
-    BE->>P: pinFileToIPFS
-    P-->>BE: { cid }
-    BE-->>FE: { uri: "ipfs://CID" }
+    U->>FE: 進 /mint 填生平、家族脈絡、同意聲明
+    U->>FE: 上傳大頭照
+    FE->>BE: POST /api/uploads/relay
+    BE->>AR: Irys 打包上傳 (失敗改走 Turbo)
+    AR-->>BE: 交易 ID
+    BE-->>FE: uri ar://ID
+    U->>FE: 選照片 / 影音 / 對話紀錄 (只暫存在瀏覽器, local: 佔位)
 
-    opt 鑄造時預構建 avatar / voice (可選)
-        FE->>BE: POST /api/avatar/build (正面照)
-        BE->>R: POST /upload_avatar (阻塞 ~100s, LAM 重建 3DGS)
-        R-->>BE: { avatarLabel, avatarUrl (zip) }
-        FE->>BE: POST /api/avatar/build-voice (本人錄音)
-        BE->>R: POST /upload_voice (IndexTTS2 克隆)
-        R-->>BE: { voiceLabel }
-        BE-->>FE: avatar/voice labels
-    end
-
-    FE->>FE: buildTabletMetadata({ ...form, assetURIs, dsas.avatar })
+    FE->>L: 鑄造前檢查 Lit 可用 (公鑰已在環境變數時不呼叫)
+    FE->>FE: 組公開 metadata (只含大頭照與基本資料)
     FE->>BE: POST /api/uploads/relay (metadata JSON)
-    BE->>P: pinJSONToIPFS
-    P-->>BE: { cid: metadataCid }
-    BE-->>FE: { uri: "ipfs://metadataCid" }
-    FE->>W: 簽 tx: safeMintWithParent(parentId, "ipfs://metadataCid")
+    BE->>AR: 上傳
+    BE-->>FE: ar://metadataId
+    FE->>W: 簽第 1 筆: mintRoot 或 safeMintWithParent
     W->>C: send tx
-    C-->>W: tokenId, receipt
-    W-->>FE: tx hash
-    FE->>BE: POST /api/tablets/:tokenId/sync
-    BE->>C: ownerOf, tokenURI, parent, children
-    BE->>P: fetch metadata
-    BE-->>FE: cached row
+    FE->>C: 等收據, 從 Transfer(from=0) 讀出 tokenId
+
+    rect rgb(245, 240, 255)
+    note over FE,L: 封存私密素材 (lib/lit/artifact.ts)
+    FE->>FE: 建立存取條件: ownerOf(tokenId) == 請求者
+    loop 每個檔案
+        FE->>FE: 以 Lit 網路公鑰 + 存取條件在瀏覽器內加密 (檔名一併加密)
+        FE->>BE: POST /api/uploads/relay (只有密文 .enc)
+        BE->>AR: 上傳密文
+    end
+    FE->>BE: 上傳 manifest (密文位置 + 資料雜湊 + 存取條件)
+    BE->>AR: 上傳
+    end
+
+    FE->>W: 簽第 2 筆: setArtifactURI(tokenId, ar://manifestId)
+    W->>C: send tx
+
+    opt 有私密對話紀錄
+        FE->>BE: SIWE 登入後 POST /api/personas/:tokenId/reindex-memory {privateChatlogs 原文}
+        BE->>BE: 切片 → e5 embedding → MemoryChunk (kind=private_chatlog)
+    end
 ```
 
-avatar/voice 兩個 label 寫進 NFT `metadata.dsas.avatar { avatarLabel, avatarUrl, voiceLabel, ... }`。
-若鑄造時沒傳照片/錄音,可之後到塔位頁補傳(見 Phase 2)。
+- 公開 metadata:`tokenURI` 指向的 JSON(ERC-721 metadata + `dsas` 擴充)。
+- 私密素材清單:`artifactURI` 指向的 manifest(`type: "aeterlux-encrypted-artifact"`),任何人都下載得到,但裡面只有密文位置、資料雜湊與存取條件。
+- 封存失敗時燈塔已鑄造,暫存檔仍在分頁中,可按「重試加密上傳」,不會重複鑄造。
 
-## Phase 2: 資產補傳上鏈 (Asset Re-upload)
+## Phase 2: 補傳上鏈(Asset Re-upload)
 
-塔位頁 5 個 Tab(生平 / 照片 / 影音 / 子孫 / 對話紀錄)owner 可就地編輯上傳;新資產 **合併**(merge,不 replace)進現有 metadata,重新 pin 後 `setTokenURI` 上鏈。
+燈塔頁「編輯資料」:公開欄位(生平、墓誌銘、子孫)合併進現有 metadata 後 `setTokenURI`;新加的照片 / 影音 / 對話紀錄走加密封存,**append** 一把新金鑰與新項目進現有 manifest 後 `setArtifactURI`,不必解開舊的。只補私密素材時不會多簽 `setTokenURI`。
 
 ```mermaid
 sequenceDiagram
-    participant U as User (owner)
+    participant U as 持有者
     participant W as MetaMask
     participant FE as Frontend
     participant BE as Backend
-    participant R as Render 機 (RTX 5090)
-    participant P as Pinata (IPFS)
+    participant AR as Irys → Arweave
     participant C as DigitalTablet (Sepolia)
 
-    U->>FE: 進 /tablet/42, 某個 Tab 編輯/上傳新資產
-    FE->>BE: POST /api/uploads/relay (new asset)
-    BE->>P: pinFileToIPFS
-    P-->>BE: { cid }
-    BE-->>FE: { uri: "ipfs://CID" }
-
-    opt 補傳照片 / 錄音時順便建 avatar / voice
-        FE->>BE: POST /api/avatar/build / build-voice
-        BE->>R: /upload_avatar (~100s) / /upload_voice (IndexTTS2)
-        R-->>BE: { avatarLabel, avatarUrl } / { voiceLabel }
-        BE-->>FE: labels
+    U->>FE: /tablet/42 編輯資料, 加照片 / 錄音 / 對話紀錄 (暫存)
+    opt 新錄音
+        FE->>BE: 用瀏覽器裡的原檔克隆聲音 (IndexTTS2)
     end
-
-    FE->>FE: merge 進現有 metadata (不 replace)
-    FE->>BE: POST /api/uploads/relay (merged metadata JSON)
-    BE->>P: pinJSONToIPFS
-    P-->>BE: { cid: newMetadataCid }
-    BE-->>FE: { uri: "ipfs://newMetadataCid" }
-    FE->>W: 簽 tx: setTokenURI(42, "ipfs://newMetadataCid")
+    U->>FE: 保存上鏈
+    FE->>AR: 讀目前 manifest (讀不到就中止, 避免蓋掉舊指標)
+    FE->>FE: 以同一組存取條件加密新檔案, append 進 manifest
+    FE->>BE: 上傳密文與新 manifest
+    BE->>AR: 上傳
+    FE->>W: setArtifactURI(42, ar://newManifest)
     W->>C: send tx
-    C-->>W: receipt (event TokenURIUpdated)
-    W-->>FE: tx hash
-    FE->>BE: POST /api/tablets/:tokenId/sync
-    BE->>C: tokenURI(42)
-    BE->>P: fetch metadata
-    BE-->>FE: cached row
+    opt 公開欄位有變
+        FE->>BE: 上傳合併後的 metadata
+        FE->>W: setTokenURI(42, ar://newMetadata)
+        W->>C: send tx
+    end
+    FE->>BE: POST /api/tablets/42/sync (等收據後)
+    FE->>BE: POST /api/personas/42/reindex-memory (含新私密對話紀錄原文)
 ```
 
-聲音克隆用的是鑄造/補傳時上傳的音頻(`metadata.dsas.assets.audios`);若當初沒傳,聊天頁會提示用戶來這裡補傳。
-
-## Phase 3: 預構建 Avatar / Voice (Pre-build)
-
-每位逝者一次性構建,可在鑄造時或塔位頁補傳時觸發。
+## Phase 3: 解鎖私密記憶(Unlock)
 
 ```mermaid
 sequenceDiagram
-    participant U as User (owner)
+    participant U as 持有者
+    participant W as MetaMask
+    participant FE as Frontend
+    participant L as Lit
+    participant C as DigitalTablet (Sepolia)
+    participant AR as Arweave
+
+    U->>FE: 私密記憶分頁 → 解鎖
+    FE->>AR: 讀 artifactURI 的 manifest
+    FE->>W: 簽名證明身分 (一次簽名, 整個解鎖流程共用)
+    loop manifest 裡每個密文
+        FE->>AR: 下載密文
+        FE->>L: 解密請求 (存取條件 + 資料雜湊 + 簽名)
+        L->>L: 各節點驗簽
+        L->>C: 各節點查 ownerOf(tokenId) == 簽名者?
+        L-->>FE: 簽章分片 (湊滿門檻)
+        FE->>FE: 組合出解密金鑰, 瀏覽器內解密內容與檔名
+    end
+    FE->>FE: 顯示
+    opt 用解鎖的對話紀錄更新 AI 記憶
+        note over FE: SIWE 登入後 POST /api/personas/:tokenId/reindex-memory {privateChatlogs}
+    end
+```
+
+簽名者不是這座燈塔目前的持有者、簽名過期,或存取條件與密文對不上,Lit 節點都不會交出分片。
+
+## Phase 4: 預構建數位分身(Avatar / Voice)
+
+每位逝者一次性構建,可在鑄造時或燈塔頁補傳時觸發。
+
+```mermaid
+sequenceDiagram
+    participant U as 持有者
     participant FE as Frontend
     participant BE as Backend
-    participant R as Render 機 (RTX 5090)
+    participant R as GPU 推理伺服器 (RTX 5090)
 
     rect rgb(235, 245, 255)
-    note over U,R: 3DGS Avatar (阻塞 ~100s)
-    U->>FE: 上傳正面照
+    note over U,R: 3DGS 人物 (阻塞約 100 秒)
+    U->>FE: 大頭照 → 生成專屬分身
     FE->>BE: POST /api/avatar/build
-    BE->>R: POST /upload_avatar (正面照)
-    R->>R: LAM aigc3d 單張照重建 3D Gaussian Splat 說話頭
-    R-->>BE: { avatarLabel, avatarUrl (zip) }
+    BE->>R: POST /upload_avatar
+    R->>R: LAM 單張照重建高斯潑濺說話頭
+    R-->>BE: avatarLabel, avatarUrl
     BE-->>FE: labels
     end
 
     rect rgb(240, 255, 240)
-    note over U,R: Voice 克隆
+    note over U,R: 克隆聲音
     U->>FE: 上傳本人錄音
     FE->>BE: POST /api/avatar/build-voice
-    BE->>R: POST /upload_voice (錄音)
-    R->>R: IndexTTS2 克隆聲音 (本機推理, 不出網)
-    R-->>BE: { voiceLabel }
+    BE->>R: POST /upload_voice
+    R->>R: IndexTTS2 克隆
+    R-->>BE: voiceLabel
     BE-->>FE: labels
     end
 
-    FE->>FE: 把 labels 寫進 metadata.dsas.avatar
+    FE->>FE: labels 寫進 metadata.dsas.avatar (保存上鏈時)
 ```
 
-> Render 機是【無狀態、persona 無關】的:它只暴露構建/推理接口,不存任何家族記憶。
-> 構建結果(`avatarLabel` / `voiceLabel` / `avatarUrl`)由 backend 落到 NFT metadata。
+GPU 伺服器是**無狀態、persona 無關**的:只暴露構建 / 推理介面,不存任何家族記憶。
 
-## Phase 4: Live Interaction (WS 流式)
+## Phase 5: 即時對話(RAG + 串流)
 
-前端不直連 render 機 —— Chrome Private Network Access 會攔 localhost→私網 IP 的 ws,所以 **WS 走 backend 代理**(`/api/avatar/ws`)轉發到 render 機 `/render?token=<jwt>`。backend 用共享密鑰 **HS256 JWT**(`RENDER_JWT_SECRET`,aud=`ymid-render`,TTL 1800s)簽 token,前端只拿短期 token。
+瀏覽器不直連 GPU 伺服器(Chrome Private Network Access 會攔公開網頁 → 私網 IP 的 WS),而是連後端 `/api/avatar/ws?token=…`,由後端轉發到 `/render?token=…`。token 是後端用 `RENDER_JWT_SECRET` 簽的 HS256(aud=`ymid-render`,TTL 1800 秒)。
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant W as MetaMask
+    participant U as 家屬
     participant FE as Frontend
     participant BE as Backend
-    participant R as Render 機 (Tailscale 100.122.149.34:8012)
-    participant C as Sepolia
+    participant DB as PostgreSQL + pgvector
+    participant R as GPU 推理伺服器
 
-    U->>FE: 進 /tablet/42, 點「啟動數位分身」
-    FE->>BE: POST /api/auth/nonce { address }
-    BE-->>FE: { nonce }
-    FE->>W: signMessage (SIWE)
-    W-->>FE: signature
-    FE->>BE: POST /api/auth/verify { message, signature }
-    BE->>BE: verify SIWE + check nonce
-    BE-->>FE: { token: JWT, address }
-
-    FE->>BE: WS connect /api/avatar/ws (Bearer JWT)
-    BE->>C: ownerOf(42) — equals JWT.address?
-    BE->>BE: 簽 HS256 render JWT (aud=ymid-render, TTL 1800s)
-    BE->>R: WS connect /render?token=<renderJwt> (代理)
+    U->>FE: 啟動數位分身互動 (持有者 SIWE 或邀請碼)
+    FE->>BE: POST /api/personas/42/avatar-session
+    BE-->>FE: 短期 render token + avatar / voice labels
+    FE->>BE: WS /api/avatar/ws?token (後端 pipe 到 /render)
 
     loop 每輪對話
-        FE->>BE: { type:'chat', request_id, messages:[...完整數組...], voice, temperature }
-        BE->>R: 轉發 (backend buildPersonaSystemPrompt 產生 system prompt)
-        R->>R: vLLM 跑 Qwen3-14B-AWQ 流式 (<think> 服務端剝掉)
-        R-->>BE: text_delta 文本幀 (流式 token)
-        BE-->>FE: text_delta
-        R->>R: IndexTTS2 合成 + LAM Audio2Expression (52維 ARKit) + ARTalk 頭姿
-        R-->>BE: 二進制幀 (每句一幀)
-        BE-->>FE: [uint32 LE meta_len][meta JSON][WAV 24kHz mono PCM16][float32 (n,52) 表情][float32 (n,3) 頭姿(可選)]
-        FE->>FE: WebGL 渲染 3DGS avatar + 預緩衝 ~1.8-3s 音頻再播放
-        R-->>BE: done / error
-        BE-->>FE: done / error
+        opt 語音輸入
+            FE->>BE: POST /api/personas/42/cloud-stt (錄音)
+            BE-->>FE: Whisper 逐字稿
+        end
+        FE->>BE: GET /api/personas/42/persona-prompt?q=問題
+        BE->>BE: e5 把問題轉成向量
+        BE->>DB: cosine top-4 (對話紀錄 + 私密對話紀錄 + 已核可回憶)
+        BE->>BE: 距離 ≤ 0.62 的片段注入 system prompt
+        BE-->>FE: prompt + 可浮現的回憶照片
+        FE->>R: chat {messages: [system, …完整歷史]} (經 WS 代理)
+        R->>R: vLLM Qwen3-14B 串流
+        R-->>FE: text_delta
+        R->>R: IndexTTS2 + Audio2Expression (52 維) + ARTalk 頭姿
+        R-->>FE: 二進位幀 (WAV 24kHz + 表情 + 頭姿)
+        FE->>FE: WebGL 渲染 3DGS 人物, 預緩衝約 1.8–3 秒音訊再播放
     end
 ```
 
-性能:LLM 首 token ~100ms;TTS 是瓶頸(IndexTTS2 RTF≈2.7),所以前端需預緩衝約 1.8-3s 音頻再播放,否則句間有空白。persona system prompt 要求「像家人朋友般口語閒聊、回覆短(通常 1-2 句)」。
+效能:LLM 首 token 約 100ms;TTS 是瓶頸(IndexTTS2 RTF≈2.7),所以前端預緩衝音訊。遇到記憶裡沒有的事,persona prompt 要求溫和承認記憶有限、不編造事實。
 
-## Phase 5: Privacy (隱私)
+## Phase 6: 線上公祭(LiveKit)
 
-對話經過自建 render 機(自己的機器,Tailscale 內網),不再經過第三方雲 API(Simli / OpenAI / fal.ai / ElevenLabs 都已不用),敏感家族對話隱私更好。LLM、語音克隆、表情/頭姿全部本機推理,不出網。
+```mermaid
+sequenceDiagram
+    participant A as 親友 A
+    participant B as 親友 B
+    participant BE as Backend
+    participant LK as LiveKit SFU
 
-原始資產(照片 / 影片 / 音頻 / 對話紀錄)永久留在 IPFS(直到家屬取消 pin),生產應切 Arweave。render 機本身【無狀態】,不留任何對話或記憶。
+    A->>BE: GET /api/ceremony/42/connect (可見度 / 邀請碼檢查)
+    BE-->>A: {transport: livekit, url, token}
+    A->>LK: 加入房間 aeterlux-ceremony-42
+    B->>BE: GET /api/ceremony/42/connect
+    B->>LK: 加入房間
+    LK-->>A: B 進場 → 在線人數 +1, A 把自己的化身位置補發給 B
+    A->>LK: data: ritual / chat / pos (10Hz)
+    LK-->>B: 轉送 (B 端做白名單、節流、範圍夾限)
+    A->>LK: 開麥克風 (語音軌)
+    LK-->>B: 訂閱 A 的聲音, 顯示誰正在說話
+    B->>BE: POST /api/tributes/42 (留言獻供)
+    BE->>LK: server API sendData (供品留言)
+    LK-->>A: 即時看到新供品
+```
 
-這呼應 idea.md §六:
-> 互動結束 → 不在第三方雲端留存,原始資料永遠留存於 IPFS / Arweave.
+`CEREMONY_TRANSPORT=ws` 或 LiveKit 連不上時,同樣的事件改走後端 WebSocket hub(`/api/ceremony/:tokenId/ws`,由後端驗證與節流),沒有語音。私人(PRIVATE)燈塔不開放公祭;不公開(UNLISTED)需邀請碼。
+
+## Phase 7: 隱私
+
+- **私密素材**:在瀏覽器加密,Arweave 上只有密文;解密金鑰只交給鏈上持有者。公開 metadata 只有墓碑級資訊。
+- **AI 記憶**:後端讀不到加密的對話紀錄;只有持有者解密後主動送來的原文會被切片、向量化,存成 `MemoryChunk`(保存逝者發言的切片文字與向量,供檢索與注入 prompt;不保存原始檔案)。
+- **推理**:對話生成、克隆聲音、表情 / 頭姿都在自建 GPU 伺服器,不交給第三方 AI 平台;互動內容仍需經網路傳到自建服務(「本機推理」不代表資料不離開家屬裝置)。語音辨識(Whisper)使用 OpenAI `whisper-1` API。
+- **永久性**:Arweave 上的資料無法刪除。隱藏內容或停止 AI 使用,不等於移除已封存的資料。

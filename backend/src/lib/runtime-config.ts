@@ -2,12 +2,12 @@
  * Runtime 可切換的雙模式設定(由 /admin 頁控制)
  *
  * 兩個開關存 Redis,跨重啟持久:
- *   dsas:mode:storage = "pinata" | "local"  上傳釘 Pinata 還是存本地磁碟
- *   dsas:mode:chain   = "real"   | "local"  鏈上互動打真測試網還是本地 anvil
+ *   dsas:mode:storage = "arweave" | "pinata" | "local"  上傳存 Arweave、釘 Pinata 還是存本地磁碟
+ *   dsas:mode:chain   = "real"    | "local"             鏈上互動打真測試網還是本地 anvil
  *
- * 預設值由 env 推導:沒填 PINATA_JWT → storage local;
- * CHAIN_ID=31337 → chain local。讀取帶 2 秒 in-process cache,
- * 避免每個請求都打一次 Redis。
+ * 預設值由 env 推導:STORAGE_DRIVER 優先;未設則有 Arweave 簽名金鑰 → arweave,
+ * 有 PINATA_JWT → pinata,否則 local。CHAIN_ID=31337 → chain local。
+ * 讀取帶 2 秒 in-process cache,避免每個請求都打一次 Redis。
  *
  * 鏈設定檔(profile):
  *   real  → env.CHAIN_ID / env.RPC_URL / env.CONTRACT_ADDRESS(沿用既有欄位)
@@ -25,8 +25,12 @@ import { baseSepolia, mainnet, sepolia } from "viem/chains";
 import { env } from "./env.js";
 import { redis } from "../redis.js";
 
-export type StorageMode = "pinata" | "local";
+export type StorageMode = "arweave" | "pinata" | "local";
 export type ChainMode = "real" | "local";
+
+function isStorageMode(v: unknown): v is StorageMode {
+  return v === "arweave" || v === "pinata" || v === "local";
+}
 
 const STORAGE_MODE_KEY = "dsas:mode:storage";
 const CHAIN_MODE_KEY = "dsas:mode:chain";
@@ -44,6 +48,8 @@ export interface ChainContext extends ChainProfile {
 }
 
 function defaultStorageMode(): StorageMode {
+  if (env.STORAGE_DRIVER) return env.STORAGE_DRIVER;
+  if (env.IRYS_PRIVATE_KEY || env.TURBO_PRIVATE_KEY) return "arweave";
   return env.PINATA_JWT ? "pinata" : "local";
 }
 
@@ -92,7 +98,7 @@ let chainCache: { value: ChainMode; at: number } | null = null;
 export async function getStorageMode(): Promise<StorageMode> {
   if (storageCache && Date.now() - storageCache.at < CACHE_TTL_MS) return storageCache.value;
   const raw = await redis.get(STORAGE_MODE_KEY);
-  const value: StorageMode = raw === "pinata" || raw === "local" ? raw : defaultStorageMode();
+  const value: StorageMode = isStorageMode(raw) ? raw : defaultStorageMode();
   storageCache = { value, at: Date.now() };
   return value;
 }

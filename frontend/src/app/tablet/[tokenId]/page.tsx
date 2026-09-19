@@ -15,6 +15,9 @@
  *   → 序列化成 File 上傳拿新 ipfs uri → setTokenURI 上鏈 → syncTablet + reload。
  * 非編輯態 / 非 owner 維持純展示,外觀完全不變。
  *
+ * 啟用 Lit 加密時,編輯態新增的照片/影音/對話紀錄先暫存在瀏覽器,保存時加密後
+ * append 進 artifactURI 的 manifest;「私密記憶」Tab 讓持有者解鎖檢視。
+ *
  * 進這頁會打 GET /api/tablets/:tokenId,如果 DB 還沒這筆 backend 會
  * lazy sync 從鏈上抓,所以剛 mint 完直接點進來也看得到。
  */
@@ -45,6 +48,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { MediaUploader } from "@/components/MediaUploader";
 import { PersonaActivationModal } from "@/components/PersonaActivationModal";
+import { PrivateMemories } from "@/components/PrivateMemories";
 import {
   fetchTablet,
   generateClonedVoice,
@@ -52,8 +56,11 @@ import {
   type TabletRecord,
   type UploadedAsset,
 } from "@/lib/api";
-import { useSetTokenURI, useSiweLogin, useWaitForReceipt } from "@/lib/wallet";
+import { useSetArtifactURI, useSetTokenURI, useSiweLogin, useWaitForReceipt } from "@/lib/wallet";
 import { buildAndSaveTabletMetadata } from "@/lib/tablet-save";
+import { litEnabled } from "@/lib/lit/config";
+import { dropStashed, getStashedFile, isLocalUri } from "@/lib/lit/pending-files";
+import { stashedInputs } from "@/lib/lit/artifact";
 import { displayName, formatDate, ipfsToHttps, shortName, truncateAddress } from "@/lib/utils";
 import { useError } from "@/components/ErrorDialog";
 import type { ChatLogEntry, TabletMetadata } from "@shared/types/tablet";
@@ -83,16 +90,26 @@ type SaveStatus =
   | { kind: "idle" }
   | { kind: "uploading" }
   | { kind: "building" }
+  | { kind: "sealing" }
   | { kind: "signing" }
   | { kind: "confirming" }
   | { kind: "syncing" }
   | { kind: "indexing" }
   | { kind: "done" };
 
-/** 從 ipfs:// uri 取一個顯示用的短名 (聲音克隆下拉用)。 */
+/** 從 ipfs:// / ar:// uri 取一個顯示用的短名 (聲音克隆下拉用);暫存檔用檔名。 */
 function uriShortName(uri: string): string {
-  const tail = uri.replace(/^ipfs:\/\//, "").replace(/^ipfs\//, "");
+  if (isLocalUri(uri)) return getStashedFile(uri)?.name ?? "新錄音";
+  const tail = uri.replace(/^(ipfs|ar):\/\//, "").replace(/^ipfs\//, "");
   return tail.length > 24 ? `…${tail.slice(-22)}` : tail;
+}
+
+/** 草稿裡暫存 (待加密) 的檔案 uri。 */
+function draftLocalUris(draft: Draft): string[] {
+  return [draft.newPhotos, draft.newVideos, draft.newAudios, draft.newChatlogs]
+    .flat()
+    .map((a) => a.uri)
+    .filter(isLocalUri);
 }
 
 /** 從檔名後綴推 ChatLogEntry.format,推不出當 txt。 */
@@ -141,6 +158,7 @@ export default function TabletDetailPage(): React.ReactElement {
   const [voiceWorking, setVoiceWorking] = React.useState(false);
 
   const { setTokenURI } = useSetTokenURI(tokenId);
+  const { setArtifactURI } = useSetArtifactURI();
   const waitForReceipt = useWaitForReceipt();
   const { login, logout, token } = useSiweLogin(tokenId);
 
@@ -201,6 +219,7 @@ export default function TabletDetailPage(): React.ReactElement {
   const busy =
     saveStatus.kind === "uploading" ||
     saveStatus.kind === "building" ||
+    saveStatus.kind === "sealing" ||
     saveStatus.kind === "signing" ||
     saveStatus.kind === "confirming" ||
     saveStatus.kind === "syncing" ||
@@ -215,6 +234,7 @@ export default function TabletDetailPage(): React.ReactElement {
 
   const cancelEdit = (): void => {
     if (busy) return;
+    dropStashed(draftLocalUris(draft));
     setEditMode(false);
     setSaveStatus({ kind: "idle" });
   };
@@ -233,9 +253,16 @@ export default function TabletDetailPage(): React.ReactElement {
     if (!sourceUri) return;
     setVoiceWorking(true);
     try {
-      const res = await fetch(ipfsToHttps(sourceUri));
-      if (!res.ok) throw new Error(`無法讀取音檔 (${res.status})`);
-      const blob = await res.blob();
+      // 待加密的錄音還沒上傳,直接用瀏覽器裡的檔案
+      const stashed = isLocalUri(sourceUri) ? getStashedFile(sourceUri) : undefined;
+      let blob: Blob;
+      if (stashed) {
+        blob = stashed;
+      } else {
+        const res = await fetch(ipfsToHttps(sourceUri));
+        if (!res.ok) throw new Error(`無法讀取音檔 (${res.status})`);
+        blob = await res.blob();
+      }
       const label = `dsas_voice_${tokenId}`;
 
       let result;
@@ -291,19 +318,40 @@ export default function TabletDetailPage(): React.ReactElement {
   const handleSave = async (): Promise<void> => {
     if (!meta) return;
     try {
+      const publicUris = (list: UploadedAsset[]): string[] =>
+        list.filter((a) => !isLocalUri(a.uri)).map((a) => a.uri);
+      const chatlogEntries: ChatLogEntry[] = draft.newChatlogs.map((a) => ({
+        platform: draft.chatlogPlatform,
+        uri: a.uri,
+        format: formatFromName(a.name),
+      }));
+      const privateFiles = stashedInputs(
+        [
+          ["photo", draft.newPhotos],
+          ["video", draft.newVideos],
+          ["audio", draft.newAudios],
+        ],
+        chatlogEntries,
+      );
+      // 私密對話紀錄要趁明文還在時送去建 AI 記憶索引,需要登入 (拒簽就之後在私密記憶頁重建)
+      let jwt = token ?? undefined;
+      if (!jwt && privateFiles.some((f) => f.kind === "chatlog")) {
+        try {
+          jwt = await login();
+        } catch {
+          jwt = undefined;
+        }
+      }
       await buildAndSaveTabletMetadata(
         meta,
         {
           bio: draft.bio,
           epitaph: draft.epitaph,
-          newPhotos: draft.newPhotos.map((a) => a.uri),
-          newVideos: draft.newVideos.map((a) => a.uri),
-          newAudios: draft.newAudios.map((a) => a.uri),
-          newChatlogs: draft.newChatlogs.map((a) => ({
-            platform: draft.chatlogPlatform,
-            uri: a.uri,
-            format: formatFromName(a.name),
-          })),
+          newPhotos: publicUris(draft.newPhotos),
+          newVideos: publicUris(draft.newVideos),
+          newAudios: publicUris(draft.newAudios),
+          newChatlogs: chatlogEntries.filter((c) => !isLocalUri(c.uri)),
+          privateFiles,
           descendants: draft.descendants
             .filter((d) => d.name.trim() && d.relation.trim())
             .map((d) => ({
@@ -319,12 +367,15 @@ export default function TabletDetailPage(): React.ReactElement {
         {
           tokenId,
           setTokenURI,
+          setArtifactURI: (uri) => setArtifactURI(tokenId, uri),
+          currentArtifactUri: record.artifactURI,
           waitForReceipt,
-          jwt: token ?? undefined,
+          jwt,
           onStage: (stage) => setSaveStatus({ kind: stage }),
         },
       );
 
+      dropStashed(draftLocalUris(draft));
       setSaveStatus({ kind: "done" });
       await reload();
       setEditMode(false);
@@ -461,6 +512,8 @@ export default function TabletDetailPage(): React.ReactElement {
                   ? "上傳素材中……"
                   : saveStatus.kind === "building"
                     ? "重組 metadata 中……"
+                  : saveStatus.kind === "sealing"
+                    ? "私密素材在瀏覽器加密並上傳中……"
                     : saveStatus.kind === "signing"
                       ? "請在錢包簽名……"
                       : saveStatus.kind === "confirming"
@@ -487,6 +540,9 @@ export default function TabletDetailPage(): React.ReactElement {
           <TabsTrigger value="av">影音</TabsTrigger>
           <TabsTrigger value="descendants">子孫</TabsTrigger>
           <TabsTrigger value="chatlogs">對話紀錄</TabsTrigger>
+          {litEnabled || record.artifactURI ? (
+            <TabsTrigger value="private">私密記憶</TabsTrigger>
+          ) : null}
         </TabsList>
 
         <TabsContent value="bio">
@@ -547,9 +603,14 @@ export default function TabletDetailPage(): React.ReactElement {
             <div className="mt-4 rounded-md border border-dashed border-ink/15 bg-paper-soft/30 p-4">
               <MediaUploader
                 label="新增照片"
-                description="會 append 到現有照片,不覆蓋。"
+                description={
+                  litEnabled
+                    ? "會加密後存進「私密記憶」,只有燈塔持有者能解鎖。"
+                    : "會 append 到現有照片,不覆蓋。"
+                }
                 accept="image/*"
                 multiple
+                deferUpload={litEnabled}
                 value={draft.newPhotos}
                 onChange={(v) => patchDraft({ newPhotos: v })}
               />
@@ -577,6 +638,7 @@ export default function TabletDetailPage(): React.ReactElement {
                       label="新增影片"
                       accept="video/*"
                       multiple
+                      deferUpload={litEnabled}
                       value={draft.newVideos}
                       onChange={(v) => patchDraft({ newVideos: v })}
                     />
@@ -603,6 +665,7 @@ export default function TabletDetailPage(): React.ReactElement {
                         label="新增錄音(上傳後會自動生成克隆聲音)"
                         accept="audio/*"
                         multiple
+                        deferUpload={litEnabled}
                         value={draft.newAudios}
                         onChange={handleAudiosChange}
                       />
@@ -821,9 +884,14 @@ export default function TabletDetailPage(): React.ReactElement {
                   </div>
                   <MediaUploader
                     label="上傳對話紀錄"
-                    description="支援 .json / .txt / .html,格式會依副檔名判斷。"
+                    description={
+                      litEnabled
+                        ? "支援 .json / .txt / .html,格式會依副檔名判斷。會加密後存進「私密記憶」。"
+                        : "支援 .json / .txt / .html,格式會依副檔名判斷。"
+                    }
                     accept=".json,.txt,.html"
                     multiple
+                    deferUpload={litEnabled}
                     value={draft.newChatlogs}
                     onChange={(v) => patchDraft({ newChatlogs: v })}
                   />
@@ -832,6 +900,12 @@ export default function TabletDetailPage(): React.ReactElement {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {litEnabled || record.artifactURI ? (
+          <TabsContent value="private">
+            <PrivateMemories tokenId={tokenId} artifactUri={record.artifactURI} isOwner={isOwner} />
+          </TabsContent>
+        ) : null}
       </Tabs>
 
       <PersonaActivationModal

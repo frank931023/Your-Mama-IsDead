@@ -1,0 +1,40 @@
+{"kind":"deck","id":"pr/edvw5q","name":"Deck"}
+{"kind":"layout","layoutId":"798e79ef-eb13-4101-b719-cf6bc1453bde","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"94c17122-cb51-4768-9a7d-392abd0b7171","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/i6svxy","slide":1,"title":"AETERLUX","textShapes":25}
+{"kind":"textbox","id":"sh/x8fa9kfa","slide":1,"name":"brand","text":"AETERLUX","textPreview":"AETERLUX","textChars":8,"textLines":1,"bbox":[64,36,380,44]}
+{"kind":"textbox","id":"sh/a5obepgj","slide":1,"name":"page","text":"QA 01　架構設計","textPreview":"QA 01　架構設計","textChars":10,"textLines":1,"bbox":[1180,40,356,34]}
+{"kind":"textbox","id":"sh/b6xs7ax4","slide":1,"name":"title","text":"NFT 只存地址：資料怎麼被找到","textPreview":"NFT 只存地址：資料怎麼被找到","textChars":16,"textLines":1,"bbox":[64,100,1472,75]}
+{"kind":"textbox","id":"sh/o3mtcfyd","slide":1,"name":"summary","text":"鏈上記錄持有權與檔案地址，公開介紹與加密素材各走一條路。","textPreview":"鏈上記錄持有權與檔案地址，公開介紹與加密素材各走一條路。","textChars":28,"textLines":1,"bbox":[66,183,1470,52]}
+{"kind":"textbox","id":"sh/94fa5kfy","slide":1,"name":"diagram-title","text":"一顆 NFT，兩條資料路徑","textPreview":"一顆 NFT，兩條資料路徑","textChars":13,"textLines":1,"bbox":[64,269,710,46]}
+{"kind":"shape","id":"sh/mh4ba5gn","slide":1,"name":"NFT","bbox":[64,413,215,158]}
+{"kind":"textbox","id":"sh/nids3ax8","slide":1,"name":"nft-name","text":"塔位 NFT","textPreview":"塔位 NFT","textChars":6,"textLines":1,"bbox":[84,435,175,44]}
+{"kind":"textbox","id":"sh/8zqtozyx","slide":1,"name":"nft-id","text":"tokenId 42","textPreview":"tokenId 42","textChars":10,"textLines":1,"bbox":[82,487,179,40]}
+{"kind":"shape","id":"sh/t0zuh4fi","slide":1,"name":"public-metadata","bbox":[430,332,320,140]}
+{"kind":"shape","id":"sh/hkvad87a","slide":1,"name":"encrypted-manifest","bbox":[430,526,320,140]}
+{"kind":"shape","id":"sh/gjm943q5","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/vidsbipk","slide":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/uh4r2d8z","slide":1,"name":"token-uri","text":"tokenURI","textPreview":"tokenURI","textChars":8,"textLines":1,"bbox":[289,350,140,36]}
+{"kind":"textbox","id":"sh/9gva987e","slide":1,"name":"artifact-uri","text":"artifactURI","textPreview":"artifactURI","textChars":11,"textLines":1,"bbox":[283,550,145,36]}
+{"kind":"textbox","id":"sh/8f2903qt","slide":1,"name":"public-title","text":"公開 metadata","textPreview":"公開 metadata","textChars":11,"textLines":1,"bbox":[450,344,280,46]}
+{"kind":"textbox","id":"sh/7ets7yp8","slide":1,"name":"public-content","text":"介紹與大頭照的位置","textPreview":"介紹與大頭照的位置","textChars":9,"textLines":1,"bbox":[450,394,280,34]}
+{"kind":"textbox","id":"sh/mdkryt8n","slide":1,"name":"public-access","text":"任何人可讀","textPreview":"任何人可讀","textChars":5,"textLines":1,"bbox":[450,432,280,30]}
+{"kind":"textbox","id":"sh/dcfals7i","slide":1,"name":"private-title","text":"私密素材索引","textPreview":"私密素材索引","textChars":6,"textLines":1,"bbox":[450,541,280,43]}
+{"kind":"textbox","id":"sh/sb6tc7qd","slide":1,"name":"private-content","text":"列出各個密文的位置","textPreview":"列出各個密文的位置","textChars":9,"textLines":1,"bbox":[450,590,280,33]}
+{"kind":"textbox","id":"sh/cfet8be9","slide":1,"name":"private-access","text":"持有 NFT 才能解密素材","textPreview":"持有 NFT 才能解密素材","textChars":13,"textLines":1,"bbox":[450,630,288,30]}
+{"kind":"textbox","id":"sh/dgnuhgfu","slide":1,"name":"chain-details","text":"另記錄擁有者\n與家族關係","textPreview":"另記錄擁有者 | 與家族關係","textChars":12,"textLines":2,"bbox":[64,600,212,74]}
+{"kind":"textbox","id":"sh/qtwb61w3","slide":1,"name":"table-title","text":"公開與加密資料分類","textPreview":"公開與加密資料分類","textChars":9,"textLines":1,"bbox":[828,269,708,46]}
+{"kind":"textbox","id":"sh/oret4red","slide":1,"name":"lookup-title","text":"找一張大頭照","textPreview":"找一張大頭照","textChars":6,"textLines":1,"bbox":[64,719,257,43]}
+{"kind":"textbox","id":"sh/psnudwfy","slide":1,"name":"lookup-0","text":"tokenId 42","textPreview":"tokenId 42","textChars":10,"textLines":1,"bbox":[346,720,177,42]}
+{"kind":"textbox","id":"sh/2pcb21w7","slide":1,"name":"lookup-1","text":"tokenURI","textPreview":"tokenURI","textChars":8,"textLines":1,"bbox":[580,720,170,42]}
+{"kind":"textbox","id":"sh/3qlcbmxs","slide":1,"name":"lookup-2","text":"metadata.json","textPreview":"metadata.json","textChars":13,"textLines":1,"bbox":[807,720,238,42]}
+{"kind":"textbox","id":"sh/gnut0re1","slide":1,"name":"lookup-3","text":"image 欄位","textPreview":"image 欄位","textChars":8,"textLines":1,"bbox":[1102,720,196,42]}
+{"kind":"textbox","id":"sh/1o3u9wfm","slide":1,"name":"lookup-4","text":"大頭照","textPreview":"大頭照","textChars":3,"textLines":1,"bbox":[1355,720,176,42]}
+{"kind":"shape","id":"sh/ji1cjmho","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/ixsvah03","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/5k3ulcze","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/4jadcri9","slide":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/rmlwnmhk","slide":1,"name":"reason","text":"大檔案放 Arweave，鏈上保存地址，降低鏈上儲存成本。","textPreview":"大檔案放 Arweave，鏈上保存地址，降低鏈上儲存成本。","textChars":29,"textLines":1,"bbox":[64,790,1470,43]}
+{"kind":"textbox","id":"sh/6lcveh0z","slide":1,"name":"source","text":"來源：architecture-qa-4pages.md 第 1 頁；ERC-721、ERC-6150","textPreview":"來源：architecture-qa-4pages.md 第 1 頁；ERC-721、ERC-6150","textChars":51,"textLines":1,"bbox":[64,853,1470,25]}
+{"kind":"table","id":"tb/orapwzmx","slide":1,"name":"","rows":5,"cols":3,"preview":"類別 | 內容 | 保存方式","bbox":[828,332,708,334]}
+{"kind":"notes","id":"nt/i6svxy","slide":1,"text":"主題：NFT 只存地址，資料怎麼被找到\n\n講解順序：先說明 NFT 的 tokenId 是識別編號，兩個 URI 指向鏈外資料。公開 metadata 列介紹和照片位置，私密素材索引列加密檔案的位置。接著指向分類表，最後走一次大頭照讀取流程。\n\n本頁依來源呈現目標架構。NFT 同時記錄擁有者與家族關係，不能把「只存地址」理解為整份合約只有兩個欄位。鏈上紀錄可追溯指標與持有權，本身不驗證上傳生平的真實性。\n\n評審追問：\n照片存在 NFT 裡嗎？檔案在鏈外儲存，NFT 記錄地址。\n為什麼不全部加密？家屬同意公開的介紹用於公開追思，私密素材另行加密。\n家族關係怎麼表示？以 parentOf、childrenOf 記錄 NFT 間的父子關係。\n地址相同但檔案被替換？依來源的 Arweave 設計，新內容對應新 ID。\n\n來源：\nhttps://eips.ethereum.org/EIPS/eip-721\nhttps://eips.ethereum.org/EIPS/eip-6150\n\n原始 Markdown（含完整細節、分類、評審追問與引用）：\n# 第 1 頁 · NFT 只存地址:資料怎麼被找到\n\n> **這頁的一句話**:塔位 NFT 在鏈上**只存兩條地址**。一條指向**公開**的逝者介紹,一條指向**加密**的私密素材。檔案本身都不在鏈上。\n\n### 建議版面\n\n左半放「兩條路」主圖,右半放「公開 vs 加密」分類表。\n\n### 主圖:一顆 NFT,兩條路\n\n```mermaid\nflowchart LR\n    NFT[\"🪪 塔位 NFT<br/>tokenId 42\"]\n\n    NFT -->|\"tokenURI\"| META[\"👁️ 公開 metadata<br/>姓名 · 生卒 · 籍貫 · 簡介 · 大頭照\"]\n    NFT -->|\"artifactURI\"| MAN[\"🔒 加密索引清單<br/>列出每個密文的位置\"]\n\n    MAN --> C1[\"相簿密文\"]\n    MAN --> C2[\"錄音密文\"]\n    MAN --> C3[\"對話紀錄密文\"]\n    MAN --> C4[\"3D 頭像 · 聲音參考密文\"]\n\n    META -.->|\"任何人可讀\"| PUB[\"OpenSea · 追思頁\"]\n    MAN -.->|\"持有 NFT 才能解密\"| OWN[\"家屬\"]\n```\n\n### 為什麼只存地址?\n\n區塊鏈很貴,也不是拿來放大檔案的:以太坊每存 32 bytes 約要 **20,000 gas**,一張照片放上鏈的成本高到不切實際。\n所以區塊鏈的角色是**公證人**,不是**硬碟**:\n\n> 鏈上證明「**這個地址指向的東西是真的,而且屬於誰**」,檔案則交給專門的永久儲存網路。\n\n| 鏈上存的東西 | 來源標準 | 大小 |\n|---|---|---|\n| `ownerOf` 擁有者 | ERC-721 | 20 bytes |\n| `parentOf` / `childrenOf` 家族樹 | ERC-6150 | 每筆 32 bytes |\n| `tokenURI` 公開資料地址 | ERC-721 Metadata | 約 50 bytes |\n| `artifactURI` 加密資料地址 | 本專案自訂 | 約 50 bytes |\n\n### 分類原則:墓碑上會刻的,才公開\n\n| 類別 | 內容 | 走哪條路 | 加密 |\n|---|---|---|---|\n| 公開介紹 | 姓名、生卒年、籍貫、簡短生平、公開大頭照 | `tokenURI` | ❌ |\n| 私密素材 | 相簿、影片、錄音、日記、對話紀錄 | `artifactURI` | ✅ |\n| 分身產物 | 3D 頭像檔、聲音參考 | `artifactURI` | ✅ |\n| 互動紀錄 | 公祭留言、邀請碼、可見度 | 一般資料庫 | 視需求 |\n\n### 「一層指一層」\n\n```\ntokenId 42 ──讀鏈──▶ 地址字串 ──取檔──▶ metadata.json ──讀 image 欄位──▶ 大頭照\n  鏈上                約 50 bytes          幾 KB                           幾 MB\n```\n\n**鏈上只為最前面那 50 bytes 付費**,其餘都在永久儲存網路上。\n\n### 評審可能追問\n\n| 問題 | 簡短回答 |\n|---|---|\n| 照片是存在 NFT 裡嗎? | 不是。NFT 只存地址,照片在 Arweave |\n| 地址不變、檔案被偷換怎麼辦? | Arweave 的交易 ID 對應的內容無法修改,換內容就會變成另一個 ID |\n| 為什麼不全部加密? | 塔位需要能被公開追思;姓名、生卒這類墓碑資訊本來就是公開的 |\n| 家族關係怎麼表示? | ERC-6150 讓 NFT 之間有父子關係,家譜直接記錄在鏈上 |\n\n### 引用來源\n\n- [EIP-721: Non-Fungible Token Standard](https://eips.ethereum.org/EIPS/eip-721) —— NFT 標準與 `tokenURI` metadata 格式\n- [EIP-6150: Hierarchical NFTs](https://eips.ethereum.org/EIPS/eip-6150) —— 階層式 NFT(家族樹)\n- 完整說明:[architecture-qa.md · Q2–Q5](architecture-qa.md)\n\n---\n\n"}

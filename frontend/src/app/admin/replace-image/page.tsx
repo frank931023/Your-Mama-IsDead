@@ -204,8 +204,8 @@ function ReplaceImageTool(): React.ReactElement {
           ? { ...built, dsas: { ...built.dsas, avatar: mergedAvatar } }
           : built;
 
-      // 4. pin 新 metadata JSON 到 IPFS。
-      setSave({ status: "uploading", message: "上傳新 metadata 至 IPFS……" });
+      // 4. 上傳新 metadata JSON 到永久儲存。
+      setSave({ status: "uploading", message: "上傳新 metadata 至 Arweave 永久儲存……" });
       const blob = new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" });
       const file = new File([blob], `tablet-${tokenId}-${Date.now()}.json`, {
         type: "application/json",
@@ -350,7 +350,7 @@ function ReplaceImageTool(): React.ReactElement {
               <CardTitle>3 · 上傳新肖像並上鏈</CardTitle>
               <CardDescription>
                 上傳一張新的肖像圖,按「換圖並上鏈」會重組 metadata(保留所有其他記憶)、
-                pin 到 IPFS,然後請你在錢包簽署 setTokenURI 交易。
+                上傳到 Arweave 永久儲存,然後請你在錢包簽署 setTokenURI 交易。
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">

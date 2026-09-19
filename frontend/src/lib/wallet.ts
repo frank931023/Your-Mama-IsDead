@@ -6,7 +6,7 @@
  * 提供四個情境的 hook:
  *   1. useSiweLogin       SIWE 登入,簽名後拿 JWT 存 sessionStorage
  *   2. useMintTablet      鑄造塔位 NFT (mintRoot / safeMintWithParent)
- *   3. useSetArtifactURI  訓練完後寫入 artifact CID 到鏈上
+ *   3. useSetArtifactURI  寫入加密私密素材 manifest 的 URI (artifactURI) 到鏈上
  *   4. useDeriveEncryptionKey  EIP-712 簽名導出 AES-GCM 金鑰 (本地加密用)
  *
  * 還有一個 useIsCorrectChain helper 給 ChainGuard 元件用。
@@ -21,7 +21,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
-import type { Address, Hex } from "viem";
+import { parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 
 import { CONTRACT_ADDRESS, DIGITAL_TABLET_ABI } from "./contract";
 import { fetchAuthNonce, verifySiwe } from "./api";
@@ -220,19 +220,46 @@ export function useMintTablet(): {
   return { mintRoot, mintWithParent, isPending, error: (error as Error | null) ?? null };
 }
 
+/**
+ * 等鑄造交易確認,從 Transfer(from = 0x0) 事件讀出新的 tokenId。
+ * 鑄造後要馬上寫 artifactURI (加密素材要綁 tokenId),所以不能等 backend sync。
+ */
+export function useMintedTokenId(): (hash: Hex) => Promise<bigint> {
+  const config = useConfig();
+  return useCallback(
+    async (hash: Hex): Promise<bigint> => {
+      const receipt = await waitForTransactionReceipt(config, { hash });
+      if (receipt.status !== "success") throw new Error("鑄造交易失敗 (reverted)");
+      const minted = parseEventLogs({
+        abi: DIGITAL_TABLET_ABI,
+        eventName: "Transfer",
+        logs: receipt.logs,
+      }).find(
+        (log) =>
+          log.args.from === zeroAddress &&
+          log.address.toLowerCase() === CONTRACT_ADDRESS.toLowerCase(),
+      );
+      if (!minted) throw new Error("交易收據裡找不到鑄造事件");
+      return minted.args.tokenId;
+    },
+    [config],
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
-// Scenario #3 — set artifact URI
+// Scenario #3 — set artifact URI (Lit 加密私密素材的 manifest)
 // ────────────────────────────────────────────────────────────────────────────
 
-export function useSetArtifactURI(tokenId: bigint | string | number): {
-  setArtifactURI: (uri: string) => Promise<Hex>;
+/** tokenId 在呼叫時才給:鑄造流程拿到新 tokenId 後馬上要寫。 */
+export function useSetArtifactURI(): {
+  setArtifactURI: (tokenId: bigint | string | number, uri: string) => Promise<Hex>;
   isPending: boolean;
   error: Error | null;
 } {
   const { writeContractAsync, isPending, error } = useWriteContract();
 
   const setArtifactURI = useCallback(
-    async (uri: string): Promise<Hex> => {
+    async (tokenId: bigint | string | number, uri: string): Promise<Hex> => {
       return writeContractAsync({
         abi: DIGITAL_TABLET_ABI,
         address: CONTRACT_ADDRESS,
@@ -240,7 +267,7 @@ export function useSetArtifactURI(tokenId: bigint | string | number): {
         args: [BigInt(tokenId), uri],
       });
     },
-    [writeContractAsync, tokenId],
+    [writeContractAsync],
   );
 
   return { setArtifactURI, isPending, error: (error as Error | null) ?? null };

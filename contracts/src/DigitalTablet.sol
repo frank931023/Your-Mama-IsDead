@@ -18,7 +18,7 @@ import {IERC6150} from "./interfaces/IERC6150.sol";
 ///           artifactURI — 訓練後的 LoRA + voice + RAG manifest,
 ///                         由 setArtifactURI 後寫入,沒訓練前是空字串
 ///
-/// @dev    詳細設計理由見 PROTOTYPE_PLAN.md §三。
+/// @dev    詳細設計理由見 PROTOTYPE_PLAN_已過時.md §三。
 contract DigitalTablet is ERC721, AccessControl, IERC6150 {
     // ─── Roles ──────────────────────────────────────────────────────────────
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");

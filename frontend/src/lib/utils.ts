@@ -19,7 +19,9 @@ const IPFS_GATEWAY = (
   process.env.NEXT_PUBLIC_IPFS_GATEWAY ?? "https://gateway.pinata.cloud/ipfs/"
 ).replace(/\/+$/, "/");
 
-const ARWEAVE_GATEWAY = "https://arweave.net/";
+const ARWEAVE_GATEWAY = (
+  process.env.NEXT_PUBLIC_ARWEAVE_GATEWAY ?? "https://arweave.net/"
+).replace(/\/*$/, "/");
 
 /** Resolve `ipfs://...` / `ar://...` to a browser-fetchable HTTPS URL. */
 export function ipfsToHttps(uri: string | undefined | null): string {

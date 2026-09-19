@@ -17,9 +17,18 @@
  *
  * build 後手動補回 avatar / stories / background / public (builder 的 conditional
  * spread 可能漏掉,尤其 public:false),確保上鏈 JSON 一定正確。
+ *
+ * Lit 加密 (patch.privateFiles):私密素材不進公開 metadata,而是加密後 append 進
+ * artifactURI 指向的 manifest,再簽 setArtifactURI。只補私密素材時不會多簽一筆 setTokenURI。
  */
 import { buildTabletMetadata } from "./metadata-builder";
-import { uploadRelay, syncTablet, reindexMemory } from "./api";
+import { uploadRelay, syncTablet, reindexMemory, type PrivateChatlogText } from "./api";
+import {
+  fetchArtifactManifest,
+  privateChatlogTexts,
+  sealPrivateAssets,
+  type PrivateFileInput,
+} from "./lit/artifact";
 import type { Hex } from "viem";
 import type {
   Assets,
@@ -55,6 +64,8 @@ export interface TabletSavePatch {
   background?: MemorialTheme;
   /** 公開旗標 (給了才覆寫;false 有意義)。 */
   public?: boolean;
+  /** Lit 模式下要加密封存的私密素材 (暫存檔),append 進 artifactURI 的 manifest。 */
+  privateFiles?: PrivateFileInput[];
 }
 
 export interface TabletSaveDeps {
@@ -69,6 +80,10 @@ export interface TabletSaveDeps {
   waitForReceipt?: (hash: Hex) => Promise<void>;
   /** SIWE jwt;有的話會在 sync 帶上並重建 RAG 記憶索引。 */
   jwt?: string;
+  /** 寫 artifactURI (來自 useSetArtifactURI);patch 有 privateFiles 時必填。 */
+  setArtifactURI?: (uri: string) => Promise<Hex>;
+  /** 目前鏈上的 artifactURI;補傳私密素材時 append 進它指向的 manifest。 */
+  currentArtifactUri?: string | null;
   /** 各階段進度回呼 (給 UI 顯示狀態)。 */
   onStage?: (stage: TabletSaveStage) => void;
 }
@@ -76,6 +91,7 @@ export interface TabletSaveDeps {
 export type TabletSaveStage =
   | "uploading"
   | "building"
+  | "sealing"
   | "signing"
   | "confirming"
   | "syncing"
@@ -84,8 +100,12 @@ export type TabletSaveStage =
 
 export interface TabletSaveResult {
   metadata: TabletMetadata;
-  metadataUri: string;
-  txHash: Hex;
+  /** 公開 metadata 沒變 (只補私密素材) 時不會重新上傳,兩者皆為 undefined。 */
+  metadataUri?: string;
+  txHash?: Hex;
+  /** 有補私密素材時,新的 manifest URI 與 setArtifactURI 交易。 */
+  artifactUri?: string;
+  artifactTxHash?: Hex;
 }
 
 /** 從現有 metadata 的「世代」attribute 讀回 generation,讀不到回 undefined。 */
@@ -206,9 +226,10 @@ export function mergeTabletMetadata(
 
 /**
  * 合併 → pin metadata JSON → 簽 setTokenURI → 從鏈上 sync → 重建 RAG 索引。
+ * 有私密素材時先加密封存 → 簽 setArtifactURI;公開 metadata 沒變就不簽 setTokenURI。
  *
  * 回傳新 metadata / uri / txHash。sync 與 reindex 失敗不致命 (吞掉),呼叫方
- * 之後 reload 會兜回一致;真正會 throw 的是 build / pin / 簽名失敗。
+ * 之後 reload 會兜回一致;真正會 throw 的是 build / pin / 加密 / 簽名失敗。
  */
 export async function buildAndSaveTabletMetadata(
   existing: TabletMetadata,
@@ -216,31 +237,64 @@ export async function buildAndSaveTabletMetadata(
   deps: TabletSaveDeps,
 ): Promise<TabletSaveResult> {
   const { tokenId, setTokenURI, waitForReceipt, jwt, onStage } = deps;
+  const { privateFiles = [], ...publicPatch } = patch;
 
   onStage?.("building");
-  const metadata = mergeTabletMetadata(existing, patch);
+  const metadata = mergeTabletMetadata(existing, publicPatch);
+  // 與「什麼都不改」的合併結果比較 (同一個 builder,欄位順序一致),判斷公開 metadata 有沒有變
+  const publicChanged =
+    privateFiles.length === 0 ||
+    JSON.stringify(metadata) !== JSON.stringify(mergeTabletMetadata(existing, {}));
 
-  onStage?.("uploading");
-  const file = new File(
-    [JSON.stringify(metadata, null, 2)],
-    `tablet-${tokenId}-${Date.now()}.json`,
-    { type: "application/json" },
-  );
-  const uploaded = await uploadRelay(file);
-
-  onStage?.("signing");
-  const txHash = await setTokenURI(uploaded.uri);
-
-  // 關鍵:等交易上鏈確認再 sync。否則 syncOnce 讀鏈會讀到舊 tokenURI
+  // 等交易上鏈確認再 sync。否則 syncOnce 讀鏈會讀到舊 tokenURI / artifactURI
   // (交易還在 mempool) → public/stories/主題 全同步成舊值,/baibai 看不到。
-  if (waitForReceipt) {
+  const confirm = async (hash: Hex): Promise<void> => {
+    if (!waitForReceipt) return;
     onStage?.("confirming");
     try {
-      await waitForReceipt(txHash);
+      await waitForReceipt(hash);
     } catch {
       /* 等確認失敗 (timeout/replaced) 不致命:仍往下 sync,大不了讀到舊值,
          使用者可稍後重新整理 / 重新 sync。 */
     }
+  };
+
+  // 1. 私密素材:加密 → 上傳密文與新 manifest → setArtifactURI
+  let artifactUri: string | undefined;
+  let artifactTxHash: Hex | undefined;
+  let chatlogTexts: PrivateChatlogText[] = [];
+  if (privateFiles.length > 0) {
+    if (!deps.setArtifactURI) throw new Error("缺少 setArtifactURI,無法寫入加密素材");
+    onStage?.("sealing");
+    const current = await fetchArtifactManifest(deps.currentArtifactUri);
+    const sealed = await sealPrivateAssets({
+      tokenId: BigInt(tokenId),
+      files: privateFiles,
+      existing: current,
+    });
+    chatlogTexts = await privateChatlogTexts(privateFiles, sealed.added);
+    onStage?.("signing");
+    artifactTxHash = await deps.setArtifactURI(sealed.manifestUri);
+    artifactUri = sealed.manifestUri;
+    await confirm(artifactTxHash);
+  }
+
+  // 2. 公開 metadata:有變才上傳並簽 setTokenURI
+  let metadataUri: string | undefined;
+  let txHash: Hex | undefined;
+  if (publicChanged) {
+    onStage?.("uploading");
+    const file = new File(
+      [JSON.stringify(metadata, null, 2)],
+      `tablet-${tokenId}-${Date.now()}.json`,
+      { type: "application/json" },
+    );
+    const uploaded = await uploadRelay(file);
+    metadataUri = uploaded.uri;
+
+    onStage?.("signing");
+    txHash = await setTokenURI(uploaded.uri);
+    await confirm(txHash);
   }
 
   onStage?.("syncing");
@@ -252,12 +306,12 @@ export async function buildAndSaveTabletMetadata(
   if (jwt) {
     onStage?.("indexing");
     try {
-      await reindexMemory(tokenId, jwt);
+      await reindexMemory(tokenId, jwt, chatlogTexts);
     } catch {
       /* 索引失敗不擋保存 — 對話降級成純 metadata persona */
     }
   }
 
   onStage?.("done");
-  return { metadata, metadataUri: uploaded.uri, txHash };
+  return { metadata, metadataUri, txHash, artifactUri, artifactTxHash };
 }

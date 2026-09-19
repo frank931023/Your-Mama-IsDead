@@ -9,6 +9,8 @@
  *
  * 預設選了某平台後會自動帶入該平台常用的檔案格式 (LINE→txt, FB→json…)。
  * 也可拖拉多檔一次上傳 (隱藏在 details 裡的 MediaUploader)。
+ *
+ * deferUpload=true (啟用 Lit 加密):不上傳明文,檔案暫存在瀏覽器等加密 (同 MediaUploader)。
  */
 import * as React from "react";
 
@@ -16,6 +18,7 @@ import { MediaUploader } from "@/components/MediaUploader";
 import { Button } from "@/components/ui/Button";
 import { useError } from "@/components/ErrorDialog";
 import { uploadRelay, type UploadedAsset } from "@/lib/api";
+import { dropStashed, getStashedFile, isLocalUri, stashFile } from "@/lib/lit/pending-files";
 import type { ChatLogEntry } from "@shared/types/tablet";
 
 const PLATFORMS: ReadonlyArray<{ value: ChatLogEntry["platform"]; label: string; format: ChatLogEntry["format"] }> = [
@@ -31,9 +34,15 @@ const PLATFORMS: ReadonlyArray<{ value: ChatLogEntry["platform"]; label: string;
 interface ChatLogImporterProps {
   value: ChatLogEntry[];
   onChange: (logs: ChatLogEntry[]) => void;
+  /** 不上傳,暫存在瀏覽器等加密。 */
+  deferUpload?: boolean;
 }
 
-export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): React.ReactElement {
+export function ChatLogImporter({
+  value,
+  onChange,
+  deferUpload = false,
+}: ChatLogImporterProps): React.ReactElement {
   const { showError } = useError();
   const [platform, setPlatform] = React.useState<ChatLogEntry["platform"]>("line");
   const [format, setFormat] = React.useState<ChatLogEntry["format"]>("txt");
@@ -46,6 +55,10 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
   }, [platform]);
 
   const handleFile = async (file: File): Promise<void> => {
+    if (deferUpload) {
+      onChange([...value, { platform, uri: stashFile(file), format }]);
+      return;
+    }
     setUploading(true);
     try {
       const asset: UploadedAsset = await uploadRelay(file);
@@ -59,13 +72,17 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
   };
 
   const remove = (idx: number): void => {
+    const uri = value[idx]?.uri;
+    if (isLocalUri(uri)) dropStashed([uri]);
     onChange(value.filter((_, i) => i !== idx));
   };
 
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-xs text-amber-900">
-        對話紀錄可能含有活人個資。Prototype 會將檔案永久存入 IPFS,請只上傳已逝者單方訊息或已取得對話對象同意之內容。
+        {deferUpload
+          ? "對話紀錄可能含有活人個資。檔案會先在瀏覽器加密,只有密文永久存入 Arweave(無法刪除),解鎖需持有這座燈塔的 NFT;仍請只上傳已逝者單方訊息或已取得對話對象同意之內容。"
+          : "對話紀錄可能含有活人個資。Prototype 會將檔案永久存入 Arweave(無法刪除),請只上傳已逝者單方訊息或已取得對話對象同意之內容。"}
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -138,7 +155,11 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
                   {PLATFORMS.find((p) => p.value === entry.platform)?.label ?? entry.platform} ·{" "}
                   {entry.format}
                 </span>
-                <span className="truncate text-ink-muted">{entry.uri}</span>
+                <span className="truncate text-ink-muted">
+                  {isLocalUri(entry.uri)
+                    ? `${getStashedFile(entry.uri)?.name ?? "檔案"}(待加密上傳)`
+                    : entry.uri}
+                </span>
               </div>
               <button
                 type="button"
@@ -159,6 +180,7 @@ export function ChatLogImporter({ value, onChange }: ChatLogImporterProps): Reac
             label="批次上傳"
             description="批次上傳的檔案將共用上方所選的「平台 / 格式」"
             multiple
+            deferUpload={deferUpload}
             accept=".txt,.json,.html,.htm,.zip"
             value={[]}
             onChange={(assets) => {

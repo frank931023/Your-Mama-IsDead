@@ -1,7 +1,7 @@
 ﻿# One-click dev setup. Everything runs in docker compose now:
-# postgres / redis / minio / backend (:14000) / frontend (:3000).
+# postgres / redis / minio / anvil / livekit / backend (:14000) / frontend (:3000).
 # Usage:  .\start.ps1
-#         .\start.ps1 -InfraOnly   (只起 postgres/redis/minio;想本機直跑
+#         .\start.ps1 -InfraOnly   (只起 postgres/redis/minio/livekit;想本機直跑
 #                                   backend/frontend 時用,見 README Manual Startup)
 
 [CmdletBinding()]
@@ -32,8 +32,8 @@ if (-not (Test-Path (Join-Path $root ".env"))) {
 }
 
 if ($InfraOnly) {
-    Step "Starting infra only (postgres / redis / minio)"
-    $code = Invoke-Compose "up -d postgres redis minio"
+    Step "Starting infra only (postgres / redis / minio / livekit)"
+    $code = Invoke-Compose "up -d postgres redis minio livekit"
     if ($code -ne 0) { throw "docker compose failed — is Docker Desktop running?" }
     Write-Host "`nInfra up. backend/frontend 請本機直跑(見 README Manual Startup)。" -ForegroundColor Green
     return

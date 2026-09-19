@@ -4,7 +4,7 @@ Smart-contract module for the **DSAS prototype** (Digital Sovereign Ancestor Sys
 Implements `DigitalTablet`: an ERC-721 + minimal ERC-6150 (hierarchical NFTs) contract that
 represents a digital memorial ("塔位") with on-chain parent/child relations.
 
-See [`../PROTOTYPE_PLAN.md`](../PROTOTYPE_PLAN.md) §三 for design rationale.
+See [`../PROTOTYPE_PLAN_已過時.md`](../PROTOTYPE_PLAN_已過時.md) §三 for design rationale.
 
 ---
 

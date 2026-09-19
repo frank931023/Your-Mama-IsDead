@@ -204,6 +204,20 @@ export async function regenerateInviteCode(
   return handle<InviteInfo>(res);
 }
 
+/** 線上公祭該用的即時通道 (後端 CEREMONY_TRANSPORT 決定)。 */
+export type CeremonyConnectInfo =
+  | { transport: "ws" }
+  | { transport: "livekit"; url: string; token: string; identity: string; room: string };
+
+export async function fetchCeremonyConnect(
+  tokenId: string | number,
+  inviteCode?: string | null,
+): Promise<CeremonyConnectInfo> {
+  const qs = inviteCode ? `?code=${encodeURIComponent(inviteCode)}` : "";
+  const res = await fetch(`${BACKEND_URL}/api/ceremony/${tokenId}/connect${qs}`, { cache: "no-store" });
+  return handle<CeremonyConnectInfo>(res);
+}
+
 export async function scanRegistry(): Promise<{ found: number; tablets: TabletRecord[] }> {
   const res = await fetch(`${BACKEND_URL}/api/tablets/scan`, { method: "POST" });
   return handle<{ found: number; tablets: TabletRecord[] }>(res);
@@ -260,22 +274,36 @@ export async function fetchPersonaPrompt(
 export interface ReindexResult {
   tokenId: string;
   chatlogsProcessed: number;
+  privateChatlogsProcessed?: number;
   storiesProcessed?: number;
   piecesIndexed: number;
   skipped: string[];
 }
 
+/** 私密(Lit 加密)对话纪录在浏览器解密后的原文,uri 是 manifest 里的加密项目。 */
+export interface PrivateChatlogText {
+  uri: string;
+  platform: string;
+  format: string;
+  text: string;
+}
+
 /**
  * 重建该 persona 的记忆索引(拉对话纪录 → 切片 → embed → 存向量库)。
  * owner 在塔位页补传对话纪录、保存上链 + sync 后调一次。可能要几秒~几十秒。
+ * privateChatlogs:后端读不到加密的对话纪录,由持有者解密后把原文一起送来。
  */
 export async function reindexMemory(
   tokenId: string | number,
   jwt: string,
+  privateChatlogs?: PrivateChatlogText[],
 ): Promise<ReindexResult> {
   const res = await fetch(`${BACKEND_URL}/api/personas/${tokenId}/reindex-memory`, {
     method: "POST",
-    headers: authHeaders(jwt),
+    headers: privateChatlogs?.length
+      ? { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" }
+      : authHeaders(jwt),
+    ...(privateChatlogs?.length ? { body: JSON.stringify({ privateChatlogs }) } : {}),
   });
   return handle<ReindexResult>(res);
 }

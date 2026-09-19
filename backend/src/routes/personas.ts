@@ -23,6 +23,23 @@ const TokenIdParam = z.object({
   tokenId: z.string().regex(/^\d+$/u),
 });
 
+/** 持有者在瀏覽器解密後送來的私密對話紀錄 (後端讀不到加密的原檔)。 */
+const ReindexBody = z
+  .object({
+    privateChatlogs: z
+      .array(
+        z.object({
+          uri: z.string().min(1).max(512),
+          platform: z.string().min(1).max(32),
+          format: z.string().min(1).max(16),
+          text: z.string().max(20 * 1024 * 1024),
+        }),
+      )
+      .max(50)
+      .optional(),
+  })
+  .nullish();
+
 /** cosine 距離大於此值的命中視為「不夠相關」丟掉 (e5 normalize 後,經驗閾值)。 */
 const MEMORY_MAX_DISTANCE = 0.62;
 /**
@@ -308,12 +325,18 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
   // 記憶索引 (拉 chatlogs → 解析 → 切片 → embed → 存 pgvector)。前端在「保存上鏈」
   // 成功 + sync 後呼叫一次即可。冪等:重跑會先清舊再建。可能要跑幾秒~幾十秒
   // (首次會下載 embedding 模型)。
+  // body.privateChatlogs (選填):Lit 加密的對話紀錄由持有者解密後送原文來索引。
   app.post(
     "/:tokenId/reindex-memory",
     { preHandler: [requireAuth, requireOwner("tokenId")] },
     async (request, reply) => {
       const params = TokenIdParam.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
+      const body = ReindexBody.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "invalid_body", issues: body.error.issues });
+      }
+      const privateChatlogs = body.data?.privateChatlogs ?? [];
       const tokenId = BigInt(params.data.tokenId);
       const tablet = await prisma.tablet.findUnique({ where: { tokenId } });
       if (!tablet) return reply.code(404).send({ error: "tablet_not_synced" });
@@ -321,10 +344,10 @@ export const personaRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       if (!metadata) return reply.code(409).send({ error: "metadata_unavailable" });
       try {
         const t0 = Date.now();
-        const result = await reindexMemory(tokenId, metadata);
+        const result = await reindexMemory(tokenId, metadata, privateChatlogs);
         request.log.info(
           { ...result, ms: Date.now() - t0 },
-          `[RAG] reindex token#${tokenId}: chatlogs=${result.chatlogsProcessed} stories=${result.storiesProcessed} 片段=${result.piecesIndexed} skipped=${result.skipped.length} (${((Date.now() - t0) / 1000).toFixed(1)}s)`,
+          `[RAG] reindex token#${tokenId}: chatlogs=${result.chatlogsProcessed} private=${result.privateChatlogsProcessed} stories=${result.storiesProcessed} 片段=${result.piecesIndexed} skipped=${result.skipped.length} (${((Date.now() - t0) / 1000).toFixed(1)}s)`,
         );
         if (result.piecesIndexed === 0) {
           request.log.warn(

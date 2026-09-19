@@ -1,8 +1,10 @@
 /**
  * RAG 索引 + 檢索 (逝者對話紀錄 + 親友回憶 → 向量記憶)
  *
- * 兩種記憶來源 (MemoryChunk.kind):
+ * 記憶來源 (MemoryChunk.kind):
  *   - chatlog: 逝者本人在對話紀錄裡的發言 (metadata.dsas.assets.chatlogs)
+ *   - private_chatlog: Lit 加密的私密對話紀錄。後端讀不到密文,由持有者在瀏覽器
+ *              解密後把原文送來索引;之後一般的重建不會刪掉它們 (見 reindexMemory)
  *   - story:   哀悼版上屋主核可的親友回憶 (MemorialStory, APPROVED/ONCHAIN)
  *              可附照片 (mediaUri),檢索命中時照片能在對話中浮現
  *
@@ -26,20 +28,22 @@
  *   - 平台格式不過度工程化:支援 (a) 我們 ChatLogEntry 的 json/txt;
  *     (b) 常見匯出的通用 JSON 陣列;(c) 純文字逐行。抓不到就盡量降級。
  */
-import axios from "axios";
 import { prisma } from "../db.js";
-import { gatewayUrl } from "./ipfs.js";
+import { fetchFromStorage } from "./ipfs.js";
 import { embedPassages, embedQuery, toPgVector } from "./embedding.js";
 import type { TabletMetadata, ChatLogEntry } from "../../../shared/types/tablet.js";
 
 /** 記憶來源類型。 */
 export type MemoryKind = "chatlog" | "story";
 
+/** 私密對話紀錄的 chunk 另外標記,檢索時仍當 chatlog 使用。 */
+const PRIVATE_CHATLOG_KIND = "private_chatlog";
+
 /** 一段要被索引的記憶片段。 */
 interface MemoryPiece {
   text: string;
   sourceUri: string;
-  kind: MemoryKind;
+  kind: MemoryKind | typeof PRIVATE_CHATLOG_KIND;
   platform?: string;
   speaker?: string;
   mediaUri?: string;
@@ -332,11 +336,10 @@ async function fetchChatlogText(uri: string): Promise<string | null> {
     }
   }
   try {
-    const res = await axios.get<string>(gatewayUrl(uri), {
+    const res = await fetchFromStorage<string>(uri, {
       timeout: 20_000,
       responseType: "text",
       transformResponse: [(d) => d], // 不讓 axios 自動 JSON.parse,要原文
-      validateStatus: (s) => s >= 200 && s < 300,
     });
     return typeof res.data === "string" ? res.data : String(res.data);
   } catch {
@@ -347,9 +350,20 @@ async function fetchChatlogText(uri: string): Promise<string | null> {
 export interface ReindexResult {
   tokenId: string;
   chatlogsProcessed: number;
+  /** 本次送來並索引的私密對話紀錄數 */
+  privateChatlogsProcessed: number;
   storiesProcessed: number;
   piecesIndexed: number;
   skipped: string[];
+}
+
+/** 持有者在瀏覽器解密後送來的私密對話紀錄原文。 */
+export interface PrivateChatlogInput {
+  /** 加密項目在 artifact manifest 裡的 uri,當作 sourceUri */
+  uri: string;
+  platform: string;
+  format: string;
+  text: string;
 }
 
 /** 批次 embed + 插入。pgvector 欄位 Prisma 不支援,走 $executeRaw 原生 INSERT。 */
@@ -392,21 +406,46 @@ async function fetchApprovedStories(tokenId: bigint): Promise<StoryForIndex[]> {
 
 /**
  * 重建某 token 的記憶索引 (冪等:先刪舊 chunk 再插新)。
- * 來源 = metadata 的 chatlogs + DB 裡已核可的 stories。
+ * 來源 = metadata 的 chatlogs + DB 裡已核可的 stories + 本次送來的私密對話紀錄。
  * 失敗的單個 chatlog 記進 skipped,不中斷整體。
+ *
+ * 私密對話紀錄的 chunk 只有在同一個 uri 再次送來時才替換;沒送來就保留,
+ * 所以一般的保存上鏈觸發重建時不會把它們清掉。
  */
 export async function reindexMemory(
   tokenId: bigint,
   metadata: TabletMetadata,
+  privateChatlogs: PrivateChatlogInput[] = [],
 ): Promise<ReindexResult> {
   const deceasedName = metadata.dsas.deceased?.name || metadata.name || "";
   const chatlogs: ChatLogEntry[] = metadata.dsas.assets?.chatlogs ?? [];
   const skipped: string[] = [];
 
   // 先刪舊 (即使沒來源也要刪,確保移除後索引也乾淨)
-  await prisma.$executeRaw`DELETE FROM "MemoryChunk" WHERE "tokenId" = ${tokenId}`;
+  await prisma.$executeRaw`
+    DELETE FROM "MemoryChunk" WHERE "tokenId" = ${tokenId} AND "kind" <> ${PRIVATE_CHATLOG_KIND}
+  `;
+  const replacedUris = [...new Set(privateChatlogs.map((c) => c.uri))];
+  if (replacedUris.length > 0) {
+    await prisma.$executeRaw`
+      DELETE FROM "MemoryChunk"
+      WHERE "tokenId" = ${tokenId} AND "kind" = ${PRIVATE_CHATLOG_KIND} AND "sourceUri" = ANY(${replacedUris}::text[])
+    `;
+  }
 
   const allPieces: MemoryPiece[] = [];
+  let privateProcessed = 0;
+  for (const cl of privateChatlogs) {
+    const msgs = parseChatlogRaw(cl.text, cl.format);
+    if (msgs.length === 0) {
+      skipped.push(cl.uri);
+      continue;
+    }
+    const pieces = piecesFromMessages(msgs, deceasedName, cl.uri, cl.platform);
+    allPieces.push(...pieces.map((p): MemoryPiece => ({ ...p, kind: PRIVATE_CHATLOG_KIND })));
+    privateProcessed += 1;
+  }
+
   let processed = 0;
   for (const cl of chatlogs) {
     const raw = await fetchChatlogText(cl.uri);
@@ -433,6 +472,7 @@ export async function reindexMemory(
   return {
     tokenId: tokenId.toString(),
     chatlogsProcessed: processed,
+    privateChatlogsProcessed: privateProcessed,
     storiesProcessed: stories.length,
     piecesIndexed: indexed,
     skipped,
@@ -479,13 +519,14 @@ interface RawHit {
 
 /**
  * 用 query 檢索某 token 的 top-k 記憶片段 (cosine 距離由小到大,
- * chatlog 與 story 混合排序)。
+ * chatlog 與 story 混合排序)。預設最多 4 段 (系統概述文件 0914 的規格),
+ * 呼叫端再以距離門檻篩掉不夠相關的。
  * 沒有索引 / embed 失敗時回空陣列 (對話降級成純 metadata persona,不報錯)。
  */
 export async function retrieveMemory(
   tokenId: bigint,
   query: string,
-  k = 6,
+  k = 4,
 ): Promise<MemoryHit[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@noble/curves": "^1.2.0",
     "@rainbow-me/rainbowkit": "^2.1.0",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
@@ -25,6 +26,7 @@
     "clsx": "^2.1.1",
     "dompurify": "^3.4.8",
     "gaussian-splat-renderer-for-lam": "^0.0.9-alpha.2",
+    "livekit-client": "^2.22.3",
     "lucide-react": "^0.439.0",
     "next": "^14.2.5",
     "react": "^18.3.1",

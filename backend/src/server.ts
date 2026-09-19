@@ -28,6 +28,7 @@ import { avatarRoutes, avatarSessionRoutes } from "./routes/avatar.js";
 import { attachAvatarWsProxy } from "./lib/ws-proxy.js";
 import { attachCeremonyHub } from "./lib/ceremony-hub.js";
 import { tributeRoutes } from "./routes/tributes.js";
+import { ceremonyRoutes } from "./routes/ceremony.js";
 import { storyRoutes } from "./routes/stories.js";
 import { adminRoutes } from "./routes/admin.js";
 import { getPublicConfig } from "./lib/runtime-config.js";
@@ -82,13 +83,14 @@ export async function buildServer(): Promise<FastifyInstance> {
   // 各模組路由掛載:統一以 /api/<domain> 為前綴
   await app.register(authRoutes, { prefix: "/api/auth" });        // SIWE nonce + JWT 簽發
   await app.register(tabletRoutes, { prefix: "/api/tablets" });   // 塔位查詢 / sync / 家族樹
-  await app.register(uploadRoutes, { prefix: "/api/uploads" });   // 檔案中繼上傳到 IPFS
+  await app.register(uploadRoutes, { prefix: "/api/uploads" });   // 檔案中繼上傳 (Arweave / IPFS / 本機)
   await app.register(jobRoutes, { prefix: "/api/jobs" });         // 訓練 job 排程與回報
   await app.register(personaRoutes, { prefix: "/api/personas" }); // 對話/語音/影像/短片
   await app.register(simliRoutes, { prefix: "/api/simli" });      // (舊) Simli 雲端生成專屬 avatar 臉
   await app.register(avatarRoutes, { prefix: "/api/avatar" });    // (新) 自建 LAM 渲染機:上傳照片/音頻建 3DGS avatar/克隆聲音
   await app.register(avatarSessionRoutes, { prefix: "/api/personas" }); // (新) /:tokenId/avatar-session 簽 WS token
   await app.register(tributeRoutes, { prefix: "/api/tributes" }); // 線上靈堂留言板
+  await app.register(ceremonyRoutes, { prefix: "/api/ceremony" }); // 線上公祭連線資訊 (ws / LiveKit)
   await app.register(storyRoutes, { prefix: "/api/stories" });    // 哀悼版回憶 (story)
   await app.register(adminRoutes, { prefix: "/api/admin" });      // 單密碼 admin:模式切換 / anvil 餵 gas
 

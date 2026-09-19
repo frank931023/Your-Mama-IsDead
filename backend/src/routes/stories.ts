@@ -4,23 +4,30 @@
  * 端點:
  *   GET    /api/stories/:tokenId            公開:列出已核可 (APPROVED + ONCHAIN) 的回憶
  *   GET    /api/stories/:tokenId/all        屋主:列出全部狀態 (含 PENDING / REJECTED) 供審核
- *   POST   /api/stories/:tokenId            任何人投稿一段回憶 (內容先 pin 到 IPFS,狀態 PENDING)
+ *   POST   /api/stories/:tokenId            任何人投稿一段回憶 (內容先永久封存,狀態 PENDING)
  *   PATCH  /api/stories/:tokenId/:storyId   屋主:核可 / 隱藏 (APPROVED | REJECTED)
- *   DELETE /api/stories/:tokenId/:storyId   屋主:硬刪 DB row (IPFS CID 仍在=不可竄改)
+ *   DELETE /api/stories/:tokenId/:storyId   屋主:硬刪 DB row (已封存內容仍在=不可竄改)
  *   POST   /api/stories/:tokenId/commit     屋主:把剛上鏈那批 APPROVED 翻成 ONCHAIN (dedup)
  *
  * 設計重點:
  *   - 投稿不要求登入,任何訪客都能留下回憶 (符合線上靈堂「來客即賓」精神)
  *   - 但預設 PENDING,屋主審核過才公開可見、才會被批次上鏈 (擋濫用)
  *   - 屋主動作走 requireAuth + requireOwner("tokenId") 直接讀鏈驗持有
- *   - story 內容投稿當下就 pin 到 IPFS,拿到不可竄改的 contentCid (immutability proof)
+ *   - story 內容投稿當下就永久封存,拿到不可竄改的 contentCid (immutability proof):
+ *     storage mode = arweave 時存 Arweave,contentCid = ar://<txid>;
+ *     其他模式 pin 到 IPFS,contentCid = IPFS CID(並 best-effort 同步一份到 Arweave)
  */
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { isAddress, getAddress } from "viem";
 import { prisma } from "../db.js";
 import { pinJSON } from "../lib/ipfs.js";
-import { uploadJSONToArweave } from "../lib/arweave.js";
+import {
+  arweaveConfigured,
+  uploadJSONToArweave,
+  uploadJSONToArweaveOrThrow,
+} from "../lib/arweave.js";
+import { getStorageMode } from "../lib/runtime-config.js";
 import { requireAuth, requireOwner } from "../auth/middleware.js";
 import { requireWriteAccess } from "../lib/access.js";
 import { indexApprovedStory, removeStoryChunks } from "../lib/rag.js";
@@ -137,7 +144,7 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     },
   );
 
-  // POST /api/stories/:tokenId — 任何人投稿;內容先 pin 到 IPFS,狀態 PENDING
+  // POST /api/stories/:tokenId — 任何人投稿;內容先永久封存,狀態 PENDING
   app.post("/:tokenId", { preHandler: [requireWriteAccess("tokenId")] }, async (request, reply) => {
     const params = TokenIdParam.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_token_id" });
@@ -151,7 +158,7 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const authorAddress = body.data.authorAddress ? getAddress(body.data.authorAddress) : null;
     const createdAtIso = new Date().toISOString();
 
-    // 1. 先把 story 內容 pin 到 IPFS 拿不可竄改的 contentCid。
+    // 1. 先把 story 內容永久封存,拿不可竄改的 contentCid。
     const storyPayload = {
       v: 1,
       type: "dsas-memorial-story",
@@ -164,32 +171,52 @@ export const storyRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       date: body.data.refDate ?? null,
       createdAt: createdAtIso,
     };
-    let contentCid: string;
-    try {
-      const pinned = await pinJSON(
-        storyPayload,
-        `story-${tokenId.toString()}-${createdAtIso}`,
-      );
-      contentCid = pinned.cid;
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      if (reason === "pinata_not_configured") {
-        return reply.code(503).send({ error: "pinata_not_configured" });
-      }
-      request.log.error({ err }, "story pin to IPFS failed");
-      return reply.code(502).send({ error: "story_pin_failed" });
-    }
-
-    // 1b. 同步永存一份到 Arweave (fire-and-forget,失敗不擋投稿)。
-    // 掛 Type/Token-Id tags,之後可用 Arweave GraphQL 依 tag 撈回,
-    // 完全不依賴我們的 DB;IPFS 的 contentCid 也一併記在 tag 裡對照。
-    void uploadJSONToArweave(storyPayload, `story-${tokenId.toString()}`, [
+    // 掛 Type/Token-Id tags,之後可用 Arweave GraphQL 依 tag 撈回,完全不依賴我們的 DB。
+    const storyTags = [
       { name: "Type", value: "dsas-memorial-story" },
       { name: "Token-Id", value: tokenId.toString() },
-      { name: "IPFS-CID", value: contentCid },
-    ]).then((ar) => {
-      if (ar) request.log.info({ arweaveId: ar.id, contentCid }, "story archived to Arweave");
-    });
+    ];
+    let contentCid: string;
+    if ((await getStorageMode()) === "arweave") {
+      if (!arweaveConfigured()) {
+        return reply.code(503).send({ error: "arweave_not_configured" });
+      }
+      try {
+        const ar = await uploadJSONToArweaveOrThrow(
+          storyPayload,
+          `story-${tokenId.toString()}-${createdAtIso}`,
+          storyTags,
+        );
+        contentCid = ar.uri;
+      } catch (err) {
+        request.log.error({ err }, "story archive to Arweave failed");
+        return reply.code(502).send({ error: "story_archive_failed" });
+      }
+    } else {
+      try {
+        const pinned = await pinJSON(
+          storyPayload,
+          `story-${tokenId.toString()}-${createdAtIso}`,
+        );
+        contentCid = pinned.cid;
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        if (reason === "pinata_not_configured") {
+          return reply.code(503).send({ error: "pinata_not_configured" });
+        }
+        request.log.error({ err }, "story pin to IPFS failed");
+        return reply.code(502).send({ error: "story_pin_failed" });
+      }
+
+      // 1b. 同步永存一份到 Arweave (fire-and-forget,失敗不擋投稿);IPFS CID 記在 tag 裡對照。
+      const ipfsCid = contentCid;
+      void uploadJSONToArweave(storyPayload, `story-${tokenId.toString()}`, [
+        ...storyTags,
+        { name: "IPFS-CID", value: ipfsCid },
+      ]).then((ar) => {
+        if (ar) request.log.info({ arweaveId: ar.id, contentCid: ipfsCid }, "story archived to Arweave");
+      });
+    }
 
     // 2. 存進 DB,狀態 PENDING。
     const created = await prisma.memorialStory.create({

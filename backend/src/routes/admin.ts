@@ -8,8 +8,8 @@
  *   SIWE 會話簽的 JWT 沒有 role,拿來打 admin API 會被擋。
  *
  * 可切換的東西(存 Redis,見 lib/runtime-config.ts):
- *   storageMode: pinata | local   上傳釘 IPFS 還是存本地磁碟
- *   chainMode:   real   | local   打 Sepolia 還是本地 anvil
+ *   storageMode: arweave | pinata | local   上傳存 Arweave、釘 IPFS 還是存本地磁碟
+ *   chainMode:   real    | local            打 Sepolia 還是本地 anvil
  *
  * 另附 POST /fund:chain mode = local 時,用 anvil 的作弊 RPC
  * (anvil_setBalance)直接給任意地址餵 ETH,免 faucet。
@@ -20,6 +20,7 @@ import { z } from "zod";
 import axios from "axios";
 import { parseEther, numberToHex } from "viem";
 import { env } from "../lib/env.js";
+import { arweaveConfigured } from "../lib/arweave.js";
 import {
   getChainContext,
   getChainMode,
@@ -32,7 +33,7 @@ import {
 const LoginBody = z.object({ password: z.string().min(1).max(256) });
 
 const ConfigBody = z.object({
-  storageMode: z.enum(["pinata", "local"]).optional(),
+  storageMode: z.enum(["arweave", "pinata", "local"]).optional(),
   chainMode: z.enum(["real", "local"]).optional(),
 });
 
@@ -101,6 +102,9 @@ export const adminRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       storageMode,
       chainMode,
       pinataConfigured: Boolean(env.PINATA_JWT),
+      arweaveConfigured: arweaveConfigured(),
+      arweaveBundler: env.ARWEAVE_BUNDLER,
+      irysNode: env.IRYS_NODE,
       chains: {
         real: {
           chainId: env.CHAIN_ID,

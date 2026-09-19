@@ -48,6 +48,20 @@ services:
     volumes:
       - anvil-data:/data
 
+  # LiveKit:線上公祭的多人語音與即時事件 (CEREMONY_TRANSPORT=livekit 時使用)。
+  # --dev = 本機開發模式;--node-ip 是瀏覽器建立 WebRTC 連線的位址:本機用 127.0.0.1,
+  # 要讓區網其他裝置加入時在 .env 設 LIVEKIT_NODE_IP=<這台電腦的區網 IP>。
+  # 正式部署可改用 LiveKit Cloud(.env 設 LIVEKIT_URL / LIVEKIT_HOST_URL / 金鑰),不需要這個服務。
+  livekit:
+    image: livekit/livekit-server:v1.13.7
+    command: ["--dev", "--bind", "0.0.0.0", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
   backend:
     image: node:20-bookworm
     working_dir: /app/backend
@@ -61,6 +75,8 @@ services:
       # 容器內連 db/redis 要走 compose service name,蓋掉 .env 裡的 localhost
       DATABASE_URL: postgresql://dsas:dsas@postgres:5432/dsas
       REDIS_URL: redis://redis:6379
+      # 後端呼叫 LiveKit server API 走 compose 內網;用 LiveKit Cloud 時在 .env 設 LIVEKIT_HOST_URL
+      LIVEKIT_HOST_URL: ${LIVEKIT_HOST_URL:-http://livekit:7880}
     # migrate deploy(不是 migrate dev):migrate dev 會把 Prisma schema 表達
     # 不了的 hnsw 向量索引 (MemoryChunk) 誤判成 drift 而生成 DROP INDEX。
     command: sh -c "npm install && npx prisma generate && npx prisma migrate deploy && npm run dev"

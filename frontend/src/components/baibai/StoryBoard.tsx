@@ -174,7 +174,7 @@ function StoryComposer({
     } catch (e) {
       const msg =
         e instanceof ApiError && e.status === 503
-          ? "目前無法保存回憶 (IPFS 未設定),請稍後再試或聯絡管理者。"
+          ? "目前無法保存回憶 (永久儲存未設定),請稍後再試或聯絡管理者。"
           : e instanceof Error
             ? e.message
             : "投稿失敗";

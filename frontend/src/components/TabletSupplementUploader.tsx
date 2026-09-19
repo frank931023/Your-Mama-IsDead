@@ -282,8 +282,8 @@ export function TabletSupplementUploader({
         ? { ...built, dsas: { ...built.dsas, avatar: mergedAvatar } }
         : built;
 
-      // 7. pin metadata JSON 到 IPFS。
-      setSave({ status: "uploading", message: "上傳 metadata 至 IPFS……" });
+      // 7. 上傳 metadata JSON 到永久儲存。
+      setSave({ status: "uploading", message: "上傳 metadata 至 Arweave 永久儲存……" });
       const blob = new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" });
       const file = new File([blob], `tablet-${tokenId}-${Date.now()}.json`, {
         type: "application/json",

@@ -1,0 +1,1755 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/y90nupkv",
+    "id": "y90nupkv",
+    "slide": 1,
+    "layoutId": "/ppt/slideLayouts/slideLayout1.xml",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F4F2EB",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1600,
+      "height": 900
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "fontScheme": {
+      "name": "Office",
+      "majorFont": {
+        "latinTypeface": "Calibri Light",
+        "eastAsianTypeface": "Calibri Light",
+        "complexScriptTypeface": "Calibri Light"
+      },
+      "minorFont": {
+        "latinTypeface": "Calibri",
+        "eastAsianTypeface": "Calibri",
+        "complexScriptTypeface": "Calibri"
+      }
+    },
+    "typefaces": [
+      "Calibri",
+      "Calibri Light",
+      "Microsoft JhengHei"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout1.xml",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0bmd476t",
+      "id": "21",
+      "name": "brand",
+      "bbox": [
+        64,
+        30,
+        400,
+        44
+      ],
+      "geometry": "rect",
+      "text": "AETERLUX",
+      "textPreview": "AETERLUX",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "AETERLUX"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "AETERLUX",
+          "resolvedTextStyle": {
+            "fontSize": 34,
+            "typeface": "Microsoft JhengHei",
+            "color": "#812D2A",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "AETERLUX",
+              "fontSize": 34,
+              "typeface": "Microsoft JhengHei",
+              "color": "#812D2A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/547294r6",
+      "id": "2",
+      "name": "proposal",
+      "bbox": [
+        1130,
+        33,
+        406,
+        38
+      ],
+      "geometry": "rect",
+      "text": "SaaS 收費提案",
+      "textPreview": "SaaS 收費提案",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "SaaS 收費提案"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "SaaS 收費提案",
+          "resolvedTextStyle": {
+            "fontSize": 24,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "SaaS 收費提案",
+              "fontSize": 24,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/k3yl0zql",
+      "id": "3",
+      "name": "title",
+      "bbox": [
+        64,
+        93,
+        1472,
+        78
+      ],
+      "geometry": "rect",
+      "text": "免費追思，依需求開啟 AI 陪伴",
+      "textPreview": "免費追思，依需求開啟 AI 陪伴",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "免費追思，依需求開啟 AI 陪伴"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "免費追思，依需求開啟 AI 陪伴",
+          "resolvedTextStyle": {
+            "fontSize": 56,
+            "typeface": "Microsoft JhengHei",
+            "color": "#812D2A",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "免費追思，依需求開啟 AI 陪伴",
+              "fontSize": 56,
+              "typeface": "Microsoft JhengHei",
+              "color": "#812D2A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7qp4be9c",
+      "id": "4",
+      "name": "subtitle",
+      "bbox": [
+        66,
+        176,
+        1470,
+        48
+      ],
+      "geometry": "rect",
+      "text": "月費支付持續互動與維運，分身建置及永久封存採一次性收費。",
+      "textPreview": "月費支付持續互動與維運，分身建置及永久封存採一次性收費。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "月費支付持續互動與維運，分身建置及永久封存採一次性收費。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "月費支付持續互動與維運，分身建置及永久封存採一次性收費。",
+          "resolvedTextStyle": {
+            "fontSize": 30,
+            "typeface": "Microsoft JhengHei",
+            "color": "#282B29",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "月費支付持續互動與維運，分身建置及永久封存採一次性收費。",
+              "fontSize": 30,
+              "typeface": "Microsoft JhengHei",
+              "color": "#282B29"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/65g3298r",
+      "id": "5",
+      "name": "plan-0",
+      "bbox": [
+        80,
+        266,
+        436,
+        51
+      ],
+      "geometry": "rect",
+      "text": "公益追思",
+      "textPreview": "公益追思",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "公益追思"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "公益追思",
+          "resolvedTextStyle": {
+            "fontSize": 37,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "公益追思",
+              "fontSize": 37,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ts7md4r2",
+      "id": "6",
+      "name": "plan-1",
+      "bbox": [
+        582,
+        266,
+        436,
+        51
+      ],
+      "geometry": "rect",
+      "text": "記憶對話",
+      "textPreview": "記憶對話",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "記憶對話"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "記憶對話",
+          "resolvedTextStyle": {
+            "fontSize": 37,
+            "typeface": "Microsoft JhengHei",
+            "color": "#426147",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "記憶對話",
+              "fontSize": 37,
+              "typeface": "Microsoft JhengHei",
+              "color": "#426147",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sryl4zqx",
+      "id": "7",
+      "name": "plan-2",
+      "bbox": [
+        1084,
+        266,
+        436,
+        51
+      ],
+      "geometry": "rect",
+      "text": "聲影陪伴",
+      "textPreview": "聲影陪伴",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "聲影陪伴"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "聲影陪伴",
+          "resolvedTextStyle": {
+            "fontSize": 37,
+            "typeface": "Microsoft JhengHei",
+            "color": "#812D2A",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "聲影陪伴",
+              "fontSize": 37,
+              "typeface": "Microsoft JhengHei",
+              "color": "#812D2A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fu94fe98",
+      "id": "8",
+      "name": "price-0",
+      "bbox": [
+        80,
+        327,
+        436,
+        89
+      ],
+      "geometry": "rect",
+      "text": "NT$0",
+      "textPreview": "NT$0",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "NT$0"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "NT$0",
+          "resolvedTextStyle": {
+            "fontSize": 67,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "NT$0",
+              "fontSize": 67,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/utg3698n",
+      "id": "9",
+      "name": "price-1",
+      "bbox": [
+        582,
+        327,
+        436,
+        89
+      ],
+      "geometry": "rect",
+      "text": "NT$299",
+      "textPreview": "NT$299",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "NT$299"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "NT$299",
+          "resolvedTextStyle": {
+            "fontSize": 67,
+            "typeface": "Microsoft JhengHei",
+            "color": "#426147",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "NT$299",
+              "fontSize": 67,
+              "typeface": "Microsoft JhengHei",
+              "color": "#426147",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wn6dc7eh",
+      "id": "10",
+      "name": "price-2",
+      "bbox": [
+        1084,
+        327,
+        436,
+        89
+      ],
+      "geometry": "rect",
+      "text": "NT$899",
+      "textPreview": "NT$899",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "NT$899"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "NT$899",
+          "resolvedTextStyle": {
+            "fontSize": 67,
+            "typeface": "Microsoft JhengHei",
+            "color": "#812D2A",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "NT$899",
+              "fontSize": 67,
+              "typeface": "Microsoft JhengHei",
+              "color": "#812D2A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hofulsf2",
+      "id": "11",
+      "name": "billing-0",
+      "bbox": [
+        80,
+        422,
+        436,
+        36
+      ],
+      "geometry": "rect",
+      "text": "免費使用",
+      "textPreview": "免費使用",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "免費使用"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "免費使用",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "免費使用",
+              "fontSize": 25,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ul4vaxgb",
+      "id": "12",
+      "name": "billing-1",
+      "bbox": [
+        582,
+        422,
+        436,
+        36
+      ],
+      "geometry": "rect",
+      "text": "每月／每位逝者",
+      "textPreview": "每月／每位逝者",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "每月／每位逝者"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "每月／每位逝者",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "每月／每位逝者",
+              "fontSize": 25,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vmdcj2xw",
+      "id": "13",
+      "name": "billing-2",
+      "bbox": [
+        1084,
+        422,
+        436,
+        36
+      ],
+      "geometry": "rect",
+      "text": "每月／每位逝者",
+      "textPreview": "每月／每位逝者",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "每月／每位逝者"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "每月／每位逝者",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "每月／每位逝者",
+              "fontSize": 25,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 14,
+      "kind": "table",
+      "scope": "slide",
+      "aid": "tb/gjilgzmh",
+      "id": "22",
+      "bbox": [
+        48,
+        481,
+        1504,
+        194
+      ],
+      "text": "公開追思頁、親友留言 | 含免費版追思功能 | 含標準版管理功能\n100 MiB 素材空間 | AI 文字 300 則／月 | AI 文字 600 則／月\n基本照片與生平 | 1 GiB 素材空間 | 本人聲音＋3D 頭像\n不含 AI 對話 | 邀請碼、回憶審核 | 語音 60 分／月、5 GiB 空間",
+      "textPreview": "公開追思頁、親友留言 | 含免費版追思功能 | 含標準版管理功能 | 100 MiB 素材空間 | AI 文字 300 則／月 | AI 文字 600 則／月 | 基本照片與生平 | 1 GiB 素材空間 | 本人聲音＋3D 頭像 | 不含 AI 對話 | 邀請碼、回憶審核...",
+      "rows": 4,
+      "cols": 3,
+      "cells": [
+        {
+          "index": 1,
+          "row": 1,
+          "column": 1,
+          "bbox": [
+            48,
+            481,
+            501,
+            48.5
+          ],
+          "text": "公開追思頁、親友留言",
+          "textPreview": "公開追思頁、親友留言",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "公開追思頁、親友留言",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "公開追思頁、親友留言",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "row": 1,
+          "column": 2,
+          "bbox": [
+            549,
+            481,
+            502,
+            48.5
+          ],
+          "text": "含免費版追思功能",
+          "textPreview": "含免費版追思功能",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "含免費版追思功能",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "含免費版追思功能",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "row": 1,
+          "column": 3,
+          "bbox": [
+            1051,
+            481,
+            501,
+            48.5
+          ],
+          "text": "含標準版管理功能",
+          "textPreview": "含標準版管理功能",
+          "fillColor": "#F5E5DB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "含標準版管理功能",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "含標準版管理功能",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "row": 2,
+          "column": 1,
+          "bbox": [
+            48,
+            529.5,
+            501,
+            48.5
+          ],
+          "text": "100 MiB 素材空間",
+          "textPreview": "100 MiB 素材空間",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "100 MiB 素材空間",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "100 MiB 素材空間",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "row": 2,
+          "column": 2,
+          "bbox": [
+            549,
+            529.5,
+            502,
+            48.5
+          ],
+          "text": "AI 文字 300 則／月",
+          "textPreview": "AI 文字 300 則／月",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "AI 文字 300 則／月",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "AI 文字 300 則／月",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29",
+                  "bold": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "row": 2,
+          "column": 3,
+          "bbox": [
+            1051,
+            529.5,
+            501,
+            48.5
+          ],
+          "text": "AI 文字 600 則／月",
+          "textPreview": "AI 文字 600 則／月",
+          "fillColor": "#F5E5DB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "AI 文字 600 則／月",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "AI 文字 600 則／月",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29",
+                  "bold": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "row": 3,
+          "column": 1,
+          "bbox": [
+            48,
+            578,
+            501,
+            48.5
+          ],
+          "text": "基本照片與生平",
+          "textPreview": "基本照片與生平",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "基本照片與生平",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "基本照片與生平",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "row": 3,
+          "column": 2,
+          "bbox": [
+            549,
+            578,
+            502,
+            48.5
+          ],
+          "text": "1 GiB 素材空間",
+          "textPreview": "1 GiB 素材空間",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "1 GiB 素材空間",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "1 GiB 素材空間",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "row": 3,
+          "column": 3,
+          "bbox": [
+            1051,
+            578,
+            501,
+            48.5
+          ],
+          "text": "本人聲音＋3D 頭像",
+          "textPreview": "本人聲音＋3D 頭像",
+          "fillColor": "#F5E5DB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "本人聲音＋3D 頭像",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "本人聲音＋3D 頭像",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "row": 4,
+          "column": 1,
+          "bbox": [
+            48,
+            626.5,
+            501,
+            48.5
+          ],
+          "text": "不含 AI 對話",
+          "textPreview": "不含 AI 對話",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "不含 AI 對話",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "不含 AI 對話",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#74766F"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 11,
+          "row": 4,
+          "column": 2,
+          "bbox": [
+            549,
+            626.5,
+            502,
+            48.5
+          ],
+          "text": "邀請碼、回憶審核",
+          "textPreview": "邀請碼、回憶審核",
+          "fillColor": "#F4F2EB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "邀請碼、回憶審核",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "邀請碼、回憶審核",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "row": 4,
+          "column": 3,
+          "bbox": [
+            1051,
+            626.5,
+            501,
+            48.5
+          ],
+          "text": "語音 60 分／月、5 GiB 空間",
+          "textPreview": "語音 60 分／月、5 GiB 空間",
+          "fillColor": "#F5E5DB",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "語音 60 分／月、5 GiB 空間",
+              "resolvedTextStyle": {
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "語音 60 分／月、5 GiB 空間",
+                  "fontSize": 26,
+                  "typeface": "Microsoft JhengHei",
+                  "color": "#282B29"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5sfepcfe",
+      "id": "15",
+      "name": "setup-0",
+      "bbox": [
+        72,
+        687,
+        452,
+        40
+      ],
+      "geometry": "rect",
+      "text": "免建置費",
+      "textPreview": "免建置費",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "免建置費"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "免建置費",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "免建置費",
+              "fontSize": 26,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ipovexwn",
+      "id": "16",
+      "name": "setup-1",
+      "bbox": [
+        574,
+        687,
+        452,
+        40
+      ],
+      "geometry": "rect",
+      "text": "免建置費",
+      "textPreview": "免建置費",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "免建置費"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "免建置費",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft JhengHei",
+            "color": "#426147",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "免建置費",
+              "fontSize": 26,
+              "typeface": "Microsoft JhengHei",
+              "color": "#426147"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3qxwn2x8",
+      "id": "17",
+      "name": "setup-2",
+      "bbox": [
+        1076,
+        687,
+        452,
+        40
+      ],
+      "geometry": "rect",
+      "text": "首次分身建置 NT$1,990",
+      "textPreview": "首次分身建置 NT$1,990",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "首次分身建置 NT$1,990"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "首次分身建置 NT$1,990",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft JhengHei",
+            "color": "#812D2A",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "首次分身建置 NT$1,990",
+              "fontSize": 26,
+              "typeface": "Microsoft JhengHei",
+              "color": "#812D2A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sfqdkrep",
+      "id": "18",
+      "name": "archive",
+      "bbox": [
+        64,
+        758,
+        1472,
+        44
+      ],
+      "geometry": "rect",
+      "text": "永久封存選購　NT$4,990／首 1 GiB；追加 NT$3,490／GiB",
+      "textPreview": "永久封存選購　NT$4,990／首 1 GiB；追加 NT$3,490／GiB",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "永久封存選購　NT$4,990／首 1 GiB；追加 NT$3,490／GiB"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "永久封存選購　NT$4,990／首 1 GiB；追加 NT$3,490／GiB",
+          "resolvedTextStyle": {
+            "fontSize": 29,
+            "typeface": "Microsoft JhengHei",
+            "color": "#812D2A",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "永久封存選購　NT$4,990／首 1 GiB；追加 NT$3,490／GiB",
+              "fontSize": 29,
+              "typeface": "Microsoft JhengHei",
+              "color": "#812D2A",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dgzetcfa",
+      "id": "19",
+      "name": "extra",
+      "bbox": [
+        64,
+        809,
+        1472,
+        38
+      ],
+      "geometry": "rect",
+      "text": "語音加購 NT$199／30 分鐘　　月費取消後，已完成的永久封存仍保留。",
+      "textPreview": "語音加購 NT$199／30 分鐘　　月費取消後，已完成的永久封存仍保留。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "語音加購 NT$199／30 分鐘　　月費取消後，已完成的永久封存仍保留。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "語音加購 NT$199／30 分鐘　　月費取消後，已完成的永久封存仍保留。",
+          "resolvedTextStyle": {
+            "fontSize": 26,
+            "typeface": "Microsoft JhengHei",
+            "color": "#282B29",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "語音加購 NT$199／30 分鐘　　月費取消後，已完成的永久封存仍保留。",
+              "fontSize": 26,
+              "typeface": "Microsoft JhengHei",
+              "color": "#282B29"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1cvuxc7e",
+      "id": "20",
+      "name": "terms",
+      "bbox": [
+        64,
+        861,
+        1472,
+        26
+      ],
+      "geometry": "rect",
+      "text": "試營運建議價，均為新臺幣含稅。素材空間為一般儲存；語音按成功生成音訊計量。成本假設與來源詳見備註。",
+      "textPreview": "試營運建議價，均為新臺幣含稅。素材空間為一般儲存；語音按成功生成音訊計量。成本假設與來源詳見備註。",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "試營運建議價，均為新臺幣含稅。素材空間為一般儲存；語音按成功生成音訊計量。成本假設與來源詳見備註。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "試營運建議價，均為新臺幣含稅。素材空間為一般儲存；語音按成功生成音訊計量。成本假設與來源詳見備註。",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Microsoft JhengHei",
+            "color": "#74766F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "試營運建議價，均為新臺幣含稅。素材空間為一般儲存；語音按成功生成音訊計量。成本假設與來源詳見備註。",
+              "fontSize": 18,
+              "typeface": "Microsoft JhengHei",
+              "color": "#74766F"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}
